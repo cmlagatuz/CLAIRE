@@ -348,7 +348,7 @@ def make_mouth(kind, v, root):
     if kind == "piper":
         p = _path(v.get("piper_voice", ""), root)
         if not p.exists():
-            raise FileNotFoundError("Piper voice file not found")
+            raise FileNotFoundError("Piper voice file not found (run setup_voice)")
         return PiperMouth(p)
     if kind == "windows":
         return WindowsMouth()

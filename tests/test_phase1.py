@@ -15,8 +15,9 @@ from claire.store import Store                 # noqa: E402
 
 
 class FakeBrain:
-    def __init__(self):
+    def __init__(self, reply="Hello Carl."):
         self.calls = []
+        self.reply = reply
 
     def online(self):
         return True
@@ -27,7 +28,7 @@ class FakeBrain:
             return json.dumps({"summary": "Carl talked about his toolkit.",
                                "facts": [{"text": "Carl prefers short answers", "core": True},
                                          {"text": "Carl is building a PC assistant", "core": False}]})
-        reply = "Hello Carl."
+        reply = self.reply
         if on_token:
             on_token(reply)
         return reply

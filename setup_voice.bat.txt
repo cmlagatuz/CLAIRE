@@ -2,7 +2,7 @@
 title C.L.A.I.R.E. voice setup
 cd /d "%~dp0"
 where python >nul 2>nul || (echo Python is not installed. & pause & exit /b)
-python -c "import sys; sys.exit(0 if (3,10)<=sys.version_info[:2]<=(3,13) else 1)" || (echo Her voice needs Python 3.10 to 3.13. Install Python 3.12 from python.org, then run this again. & pause & exit /b)
+python -c "import sys; sys.exit(0 if sys.version_info[:2]>=(3,10) else 1)" || (echo Her voice needs Python 3.10 or newer. & pause & exit /b)
 echo Installing her ears and her voice (Kokoro) ...
 python -m pip install --upgrade pip
 python -m pip install --upgrade numpy sounddevice faster-whisper kokoro-onnx

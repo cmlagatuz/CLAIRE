@@ -73,8 +73,12 @@ class Mouth(unittest.TestCase):
 
     def test_piper_engine_both_api_versions(self):
         played = []
-        old_play = voice._play_wav
-        voice._play_wav = lambda p, *a: played.append(wave.open(p).getnframes())
+        old_play = voice.Player.file
+
+        def fake_file(self, p, *a):
+            with wave.open(p) as w:
+                played.append(w.getnframes())
+        voice.Player.file = fake_file
         try:
             for api in ("synthesize_wav", "synthesize"):
                 class V:
@@ -92,7 +96,7 @@ class Mouth(unittest.TestCase):
                 eng.say("hello")
             self.assertEqual(played, [100, 100])
         finally:
-            voice._play_wav = old_play
+            voice.Player.file = old_play
             sys.modules.pop("piper", None)
 
     def test_missing_voice_explains(self):
@@ -183,7 +187,8 @@ class Conversation(unittest.TestCase):
         return a
 
     def tearDown(self):
-        cli.config.save_setting = self._old
+        if hasattr(self, "_old"):
+            cli.config.save_setting = self._old
 
     def test_spoken_question_is_spoken_back(self):
         a = self.app()
