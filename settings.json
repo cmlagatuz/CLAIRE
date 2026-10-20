@@ -1,0 +1,39 @@
+{
+  "user_name": "Carl",
+  "model": "qwen2.5:7b",
+  "ollama_url": "http://localhost:11434",
+  "temperature": 0.6,
+  "context_tokens": 8192,
+  "memories_per_turn": 6,
+  "recent_turns_kept": 12,
+  "auto_memory": true,
+  "voice": {
+    "enabled": true,
+    "speak": "auto",
+    "tts": "kokoro",
+    "kokoro_model": "voices/kokoro-v1.0.onnx",
+    "kokoro_voices": "voices/voices-v1.0.bin",
+    "kokoro_voice": "af_heart:0.5+af_bella:0.5",
+    "speed": 0.9,
+    "edge_voice": "en-US-AvaMultilingualNeural",
+    "edge_rate": "+0%",
+    "edge_pitch": "+0Hz",
+    "piper_voice": "voices/en_GB-jenny_dioco-medium.onnx",
+    "stt_model": "base.en",
+    "language": "en",
+    "device": "cpu",
+    "mic": null,
+    "wake_engine": "whisper",
+    "wake_words": [
+      "claire",
+      "clair",
+      "clare",
+      "clara",
+      "klara",
+      "claira"
+    ],
+    "wake_model": "hey_jarvis",
+    "wake_threshold": 0.5
+  },
+  "data_dir": "data"
+}

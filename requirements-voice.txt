@@ -1,0 +1,9 @@
+# Phase 2 · Voice (offline after the first download)
+numpy>=2.0
+sounddevice>=0.4.6        # microphone + playback
+faster-whisper>=1.0.0     # speech-to-text
+kokoro-onnx>=0.4.9        # her neural voice (Kokoro-82M), offline
+# optional:
+# edge-tts>=7.0           # Microsoft's online neural voices (text is sent to Microsoft)
+# piper-tts>=1.3          # older offline voice engine
+# openwakeword>=0.6.0     # lighter always-on wake word
