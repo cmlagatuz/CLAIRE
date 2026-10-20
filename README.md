@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.1.0 · Phase 2 (Voice)
+# C.L.A.I.R.E. — v2.2.0 · Phase 3 (Face) in progress
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ## Setup
@@ -7,8 +7,23 @@ Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 3. Unzip this folder, e.g. `C:\CLAIRE`. Moving from an older version? Copy your old `data` folder in.
 4. **setup_claire.bat** — downloads her brain, runs the self-test.
 5. **setup_voice.bat** — installs her ears and her natural voice, opens the **Voice Studio**, tests the mic.
-6. **start_claire.bat** — talk to her.
+6. **start_claire.bat** — talk to her in the terminal, or **window.bat** — open her window (below).
 If `.bat` files are blocked, rename the `.bat.txt` copies.
+
+## Her window (new)
+Run **window.bat** (or `python -m claire --window`). A window opens with a living network of light — the way she looks while she
+works. It needs nothing new to install and never leaves this PC (it listens on `127.0.0.1` only).
+
+| She is… | The network… |
+|---|---|
+| **Ready** | drifts slowly, a few quiet signals travel between clusters |
+| **Listening** | draws inward and brightens with *your* voice; rings converge on the centre (cyan) |
+| **Thinking** | signals race hub to hub, the whole network flickers (violet) |
+| **Speaking** | ripples spread outward in time with *her* voice's loudness (warm) |
+
+In the window: type and press Enter · **Talk** (or Ctrl+Space) for push-to-talk · **Hands-free** for “Hey Claire” ·
+**Voice: auto/on/off** · **Stop** (or Esc). With the online Edge voice she can't be measured, so the network animates by itself while she speaks.
+Settings: `"ui": {"port": 8765, "open": true}` in settings.json.
 
 ## Her voice
 | Engine | Quality | Where it runs | Notes |

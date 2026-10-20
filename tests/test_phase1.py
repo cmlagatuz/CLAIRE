@@ -35,7 +35,8 @@ class FakeBrain:
 
 
 def make(tmp, brain=None):
-    cfg = dict(config.DEFAULTS, data_dir=tmp)
+    cfg = json.loads(json.dumps(config.DEFAULTS))        # a private copy: tests must not change the real defaults
+    cfg["data_dir"] = tmp
     return Claire(cfg, brain or FakeBrain(), Store(str(Path(tmp) / "t.db")))
 
 

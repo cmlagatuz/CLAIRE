@@ -1,0 +1,436 @@
+"""Phase 3 · Face — her window. A local page (this PC only) with a living neural-network orb that
+listens, thinks and speaks.  Run:  python -m claire --window     (or window.bat)
+
+Only the standard library. The server listens on 127.0.0.1, checks the Host/Origin headers and needs a
+secret token that is created at every start, so websites you visit can't talk to her."""
+import json
+import queue
+import secrets
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from . import __version__
+from .brain import BrainOffline
+from .cli import HUSH, STOP_LISTENING, VOICE_INTENTS, App
+from .signals import signals
+from .voice import SentenceBuffer
+
+PAGE = Path(__file__).resolve().parent / "ui" / "orb.html"
+DEFAULT_PORT = 8765
+FRAME_SECONDS = 1 / 30
+
+
+class Hub:
+    """Fan-out of chat events to every open window."""
+
+    def __init__(self):
+        self.subs, self.lock = set(), threading.Lock()
+
+    def subscribe(self):
+        q = queue.Queue(maxsize=1000)
+        with self.lock:
+            self.subs.add(q)
+        return q
+
+    def unsubscribe(self, q):
+        with self.lock:
+            self.subs.discard(q)
+
+    def publish(self, kind, **data):
+        with self.lock:
+            subs = list(self.subs)
+        for q in subs:
+            try:
+                q.put_nowait((kind, data))
+            except queue.Full:
+                pass
+
+
+class WebSession:
+    """Everything the window can ask her to do — the same brain, memory and voice as the terminal."""
+
+    def __init__(self, app=None):
+        self.app = app or App()
+        self.hub = Hub()
+        self.turn_lock = threading.Lock()          # one conversation turn at a time
+        self.listen_lock = threading.Lock()
+        self.hf_stop = None
+        self.info = {"user": self.app.user, "version": __version__, "ready": False}
+
+    # ---------------- state the window draws ----------------
+    def frame(self):
+        vk = self.app.vk
+        sp = vk._speaker or None
+        speaking = bool(sp and sp.speaking)
+        act = signals.activity
+        if act == "listening":
+            state = "listening"
+        elif speaking or act == "responding":
+            state = "speaking"
+        elif act == "thinking":
+            state = "thinking"
+        else:
+            state = "idle"
+        lvl = signals.level if speaking else None
+        return {"s": state, "l": None if lvl is None else round(lvl, 3), "m": round(signals.mic, 3),
+                "hf": signals.handsfree}
+
+    def status(self):
+        vk = self.app.vk
+        st = vk.status()
+        return dict(self.info, mouth=st["mouth"], ears=st["ears"], speak=vk.mode,
+                    model=self.app.c.cfg["model"])
+
+    # ---------------- start-up ----------------
+    def warm_up(self):
+        """Loads her voice and checks her brain in the background so the first answer is quick."""
+        signals.activity = "thinking"
+        try:
+            online = self.app.c.brain.online()
+            _ = self.app.vk.speaker
+            self.app.c.milestone("Got a face", "Phase 3: I have a window now — a living network of light "
+                                 "that listens, thinks and speaks with me.")
+            self.info.update(ready=True, brain=online)
+            self.hub.publish("status", **self.status())
+            if not online:
+                self.hub.publish("error", text="My brain (Ollama) isn't running. Start Ollama, then talk to me.")
+            else:
+                with self.turn_lock:
+                    for _, facts in self.app.c.recover():
+                        if facts:
+                            self.hub.publish("note", text="From our last chat I learned: " + "; ".join(facts))
+        except Exception as e:
+            self.hub.publish("error", text=f"Start-up problem: {e}")
+        finally:
+            signals.activity = "idle"
+
+    # ---------------- conversation ----------------
+    def submit(self, text, spoken=False):
+        text = (text or "").strip()
+        if not text:
+            return False
+        threading.Thread(target=self.turn, args=(text, spoken), daemon=True).start()
+        return True
+
+    def turn(self, text, spoken=False):
+        """One user message → her answer. Returns False when hands-free should stop."""
+        with self.turn_lock:
+            self.hub.publish("user", text=text, spoken=spoken)
+            try:
+                return self._answer(text, spoken)
+            finally:
+                signals.activity = "idle"
+
+    def _say(self, text, speak=True):
+        vk = self.app.vk
+        self.hub.publish("claire", text=text)
+        if speak and vk.mode != "off" and vk.speaker:
+            vk.speaker.say(text)
+
+    def _answer(self, text, spoken):
+        a, vk, c = self.app, self.app.vk, self.app.c
+        sp = vk.speaker
+        if HUSH.match(text):
+            if sp:
+                sp.stop()
+            return True
+        for rx, mode in VOICE_INTENTS:
+            if rx.match(text):
+                self._say(a.set_mode(mode), speak=(mode != "off"))
+                self.hub.publish("status", **self.status())
+                return True
+        if spoken and STOP_LISTENING.search(text):
+            self._say(f"Okay {a.user}, back to typing.")
+            return False
+        speak = vk.should_speak(spoken)
+        if sp:
+            sp.stop()
+        sb, first = SentenceBuffer(), [True]
+        signals.activity = "thinking"
+        self.hub.publish("claire_start")
+
+        def tok(t):
+            if first[0]:
+                first[0] = False
+                signals.activity = "responding"
+            self.hub.publish("token", text=t)
+            if speak:
+                for s in sb.feed(t):
+                    sp.say(s)
+        try:
+            c.reply(text, on_token=tok, spoken=spoken)
+            if speak:
+                for s in sb.flush():
+                    sp.say(s)
+                c.milestone("Found my voice", "Phase 2: I can speak, listen, and wake when Carl says “Hey Claire”.")
+        except BrainOffline as e:
+            self.hub.publish("error", text=str(e))
+            if speak:
+                sp.say("I can't reach my brain right now. Please start Ollama.")
+        finally:
+            self.hub.publish("claire_end")
+        return True
+
+    # ---------------- listening ----------------
+    def talk(self):
+        """Push-to-talk: listen once, then answer."""
+        if not self.listen_lock.acquire(blocking=False):
+            return False
+        threading.Thread(target=self._talk, daemon=True).start()
+        return True
+
+    def _talk(self):
+        vk = self.app.vk
+        try:
+            if vk.speaker:
+                vk.speaker.stop()
+            signals.activity = "thinking"          # loading her ears the first time takes a moment
+            ears = vk.ears
+            if not ears:
+                self.hub.publish("error", text=f"I can't listen yet: {vk.ears_note}")
+                return
+            signals.activity = "listening"
+            try:
+                text = ears.listen(max_wait=6, max_len=25)
+            except Exception as e:
+                self.hub.publish("error", text=f"Microphone problem: {e}")
+                return
+            finally:
+                signals.activity = "idle"
+            if not text:
+                self.hub.publish("note", text="I didn't catch anything.")
+                return
+        finally:
+            self.listen_lock.release()
+        self.turn(text, spoken=True)
+
+    def set_handsfree(self, on):
+        if on and self.hf_stop is None:
+            self.hf_stop = threading.Event()
+            threading.Thread(target=self._handsfree, args=(self.hf_stop,), daemon=True).start()
+        elif not on and self.hf_stop is not None:
+            self.hf_stop.set()
+        return self.hf_stop is not None
+
+    def _handsfree(self, stop):
+        vk = self.app.vk
+        signals.handsfree = True
+        self.hub.publish("handsfree", on=True)
+        words = "Hey Claire"
+
+        def on_command(cmd):
+            if not self.turn(cmd, spoken=True):
+                stop.set()
+            if vk.speaker:
+                vk.speaker.wait()
+
+        def on_note(n):
+            if n == "ack":
+                signals.activity = "listening"
+                if vk.speaker and vk.mode != "off":
+                    vk.speaker.say("Yes?")
+                    vk.speaker.wait()
+                signals.activity = "listening"
+            elif n == "end":
+                signals.activity = "idle"
+            else:
+                self.hub.publish("error", text=n)
+        try:
+            if vk._ears is None:
+                signals.activity = "thinking"
+            if not vk.ears:
+                self.hub.publish("error", text=f"I can't listen yet: {vk.ears_note}")
+                return
+            signals.activity = "idle"
+            self.hub.publish("note", text=f"Hands-free on. Say “{words}, …”.")
+            vk.handsfree(on_command, on_note, stop)
+        except Exception as e:
+            self.hub.publish("error", text=f"Listening stopped: {e}")
+        finally:
+            signals.handsfree = False
+            signals.activity = "idle"
+            self.hf_stop = None
+            self.hub.publish("handsfree", on=False)
+
+    # ---------------- small controls ----------------
+    def stop_speaking(self):
+        if self.app.vk.speaker:
+            self.app.vk.speaker.stop()
+
+    def set_mode(self, mode):
+        if mode not in ("auto", "on", "off"):
+            return False
+        self.app.set_mode(mode)
+        if mode == "off":
+            self.stop_speaking()
+        self.hub.publish("status", **self.status())
+        return True
+
+    def close(self):
+        if self.hf_stop:
+            self.hf_stop.set()
+        self.stop_speaking()
+        try:
+            self.app.c.reflect()
+        except Exception:
+            pass
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "Claire"
+
+    def log_message(self, *args):
+        pass
+
+    # --- safety: only this PC's own page may talk to her ---
+    def _host_ok(self):
+        return self.headers.get("Host", "").lower() in self.server.allowed_hosts
+
+    def _origin_ok(self):
+        origin = self.headers.get("Origin")
+        return origin is None or origin.lower() in {"http://" + h for h in self.server.allowed_hosts}
+
+    def _send(self, code, body, ctype="application/json"):
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if not self._host_ok():
+            return self._send(403, {"error": "forbidden"})
+        url = urlparse(self.path)
+        if url.path == "/":
+            page = PAGE.read_text(encoding="utf-8").replace("__TOKEN__", self.server.token)
+            return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+        if url.path == "/events":
+            if parse_qs(url.query).get("t", [""])[0] != self.server.token:
+                return self._send(403, {"error": "forbidden"})
+            return self._events()
+        self._send(404, {"error": "not found"})
+
+    def do_POST(self):
+        if not (self._host_ok() and self._origin_ok()) or self.headers.get("X-Claire-Token") != self.server.token:
+            return self._send(403, {"error": "forbidden"})
+        if "application/json" not in self.headers.get("Content-Type", ""):
+            return self._send(415, {"error": "json only"})
+        try:
+            n = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(min(n, 65536)) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            return self._send(400, {"error": "bad request"})
+        s, path = self.server.session, urlparse(self.path).path
+        if path == "/api/say":
+            return self._send(200, {"ok": s.submit(str(body.get("text", "")))})
+        if path == "/api/talk":
+            return self._send(200, {"ok": s.talk()})
+        if path == "/api/handsfree":
+            return self._send(200, {"on": s.set_handsfree(bool(body.get("on")))})
+        if path == "/api/stop":
+            s.stop_speaking()
+            return self._send(200, {"ok": True})
+        if path == "/api/mode":
+            return self._send(200, {"ok": s.set_mode(str(body.get("mode", "")))})
+        self._send(404, {"error": "not found"})
+
+    def _events(self):
+        s = self.server.session
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        q = s.hub.subscribe()
+
+        def emit(kind, data):
+            self.wfile.write(f"event: {kind}\ndata: {json.dumps(data)}\n\n".encode())
+            self.wfile.flush()
+        try:
+            emit("status", s.status())
+            last = 0.0
+            while not self.server.stopping:
+                try:
+                    kind, data = q.get(timeout=FRAME_SECONDS)
+                    emit(kind, data)
+                except queue.Empty:
+                    pass
+                now = time.monotonic()
+                if now - last >= FRAME_SECONDS:
+                    last = now
+                    emit("frame", s.frame())
+        except (BrokenPipeError, ConnectionError, OSError):
+            pass
+        finally:
+            s.hub.unsubscribe(q)
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, session, port=DEFAULT_PORT):
+        for p in range(port, port + 20):               # next free port if busy
+            try:
+                super().__init__(("127.0.0.1", p), Handler)
+                break
+            except OSError:
+                continue
+        else:
+            raise OSError(f"No free port near {port}")
+        self.session, self.token, self.stopping = session, secrets.token_urlsafe(24), False
+        self.port = self.server_address[1]
+        self.allowed_hosts = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
+
+    @property
+    def url(self):
+        return f"http://127.0.0.1:{self.port}/"
+
+
+def open_window(url):
+    """A clean app-style window if Edge/Chrome is there, otherwise the normal browser."""
+    if sys.platform.startswith("win"):
+        for exe in ("msedge", "chrome"):
+            try:
+                subprocess.Popen(["cmd", "/c", "start", "", exe, f"--app={url}", "--window-size=1100,820"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
+            except OSError:
+                continue
+    webbrowser.open(url)
+
+
+def main(open_browser=True, port=None):
+    if sys.platform.startswith("win"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+    session = WebSession()
+    server = Server(session, port or session.app.c.cfg.get("ui", {}).get("port", DEFAULT_PORT))
+    print(f"✦ C.L.A.I.R.E. {__version__} · her window is at {server.url}  (Ctrl+C to close)")
+    threading.Thread(target=session.warm_up, daemon=True).start()
+    if open_browser and session.app.c.cfg.get("ui", {}).get("open", True):
+        open_window(server.url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stopping = True
+        print("Reflecting on our chat…")
+        session.close()
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

@@ -21,6 +21,8 @@ import wave
 from collections import deque
 from pathlib import Path
 
+from .signals import envelope, mic_level, signals
+
 # ======================================================================
 # text → speakable text
 # ======================================================================
@@ -78,9 +80,34 @@ class Player:
 
     def __init__(self):
         self._stop = threading.Event()
+        self._gen = 0
+
+    def _meter(self, env, hop=0.03):
+        """Publishes how loud she is right now (for the window) while the audio plays."""
+        self._gen += 1
+        gen, t0 = self._gen, time.monotonic()
+        if not env:
+            signals.level = None
+            return
+
+        def run():
+            while gen == self._gen and not self._stop.is_set():
+                i = int((time.monotonic() - t0) / hop)
+                if i >= len(env):
+                    break
+                signals.level = env[i]
+                time.sleep(0.02)
+            if gen == self._gen:
+                signals.level = 0.0
+        threading.Thread(target=run, daemon=True).start()
+
+    def _unmeter(self):
+        self._gen += 1
+        signals.level = 0.0
 
     def stop(self):
         self._stop.set()
+        self._unmeter()
         try:
             import sounddevice as sd
             sd.stop()
@@ -98,6 +125,7 @@ class Player:
         try:
             import sounddevice as sd
             sd.play(samples, rate)
+            self._meter(envelope(samples, rate))
             sd.wait()
             return
         except ImportError:
@@ -116,6 +144,7 @@ class Player:
     def file(self, path):
         """wav or mp3."""
         self._stop.clear()
+        self._meter(self._wav_envelope(path))
         if os.name == "nt":
             if str(path).lower().endswith(".wav"):
                 import winsound
@@ -133,6 +162,22 @@ class Player:
                     p.kill()
                 time.sleep(0.05)
             return
+
+    @staticmethod
+    def _wav_envelope(path):
+        """Loudness of a .wav file (mp3 can't be read without extra packages → None = window animates by itself)."""
+        if not str(path).lower().endswith(".wav"):
+            return None
+        try:
+            import numpy as np
+            with wave.open(str(path), "rb") as w:
+                if w.getsampwidth() != 2:
+                    return None
+                rate, ch = w.getframerate(), w.getnchannels()
+                data = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
+            return envelope(data.reshape(-1, ch).mean(axis=1), rate)
+        except Exception:
+            return None
 
     def _mci(self, path):
         """Windows' own media player API — plays mp3 with nothing installed. Same thread opens & closes."""
@@ -501,9 +546,13 @@ class Ears:
     def _blocks(self, stop_event=None):
         import sounddevice as sd
         with sd.InputStream(samplerate=RATE, channels=1, dtype="float32", blocksize=BLOCK, device=self.mic) as s:
-            while not (stop_event and stop_event.is_set()):
-                data, _ = s.read(BLOCK)
-                yield data
+            try:
+                while not (stop_event and stop_event.is_set()):
+                    data, _ = s.read(BLOCK)
+                    signals.mic = mic_level(data)
+                    yield data
+            finally:
+                signals.mic = 0.0
 
     def record(self, stop_event=None, **kw):
         return capture(self._blocks(stop_event), **kw)
@@ -654,3 +703,5 @@ class VoiceKit:
                 cmd = ears.listen(stop_event, max_wait=6, max_len=20)
             if cmd:
                 on_command(cmd)
+            else:
+                on_note("end")                     # she was called but nothing followed

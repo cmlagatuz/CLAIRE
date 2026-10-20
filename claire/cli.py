@@ -140,7 +140,7 @@ class App:
                 if self.vk.speaker and self.vk.mode != "off":
                     self.vk.speaker.say("Yes?")
                     self.vk.speaker.wait()
-            else:
+            elif n != "end":
                 print(f"{R}{n}{D}")
         try:
             self.vk.handsfree(on_command, on_note, stop)
