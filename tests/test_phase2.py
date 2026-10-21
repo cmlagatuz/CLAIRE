@@ -101,7 +101,8 @@ class Mouth(unittest.TestCase):
 
     def test_missing_voice_explains(self):
         eng, note = voice.pick_mouth({"tts": "piper", "piper_voice": "nope.onnx"}, tempfile.mkdtemp())
-        self.assertIsNone(eng)
+        # no voice at all (Linux/Mac), or the built-in Windows voice as the last resort (Windows)
+        self.assertTrue(eng is None or eng.name == "windows")
         self.assertIn("setup_voice", note)
 
     def test_speak_modes(self):
