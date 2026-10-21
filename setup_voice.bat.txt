@@ -1,12 +1,14 @@
 @echo off
 title C.L.A.I.R.E. voice setup
 cd /d "%~dp0"
-where python >nul 2>nul || (echo Python is not installed. & pause & exit /b)
-python -c "import sys; sys.exit(0 if sys.version_info[:2]>=(3,10) else 1)" || (echo Her voice needs Python 3.10 or newer. & pause & exit /b)
-echo Installing her ears and her voice (Kokoro) ...
-python -m pip install --upgrade pip
-python -m pip install --upgrade numpy sounddevice faster-whisper kokoro-onnx
-echo Installing optional online voices (Edge) ...
-python -m pip install --upgrade edge-tts
-python -m claire.voice_setup
+call make_env.bat || (pause & exit /b 1)
+set "PY=.venv\Scripts\python.exe"
+echo Installing her ears and her voice - Kokoro ...
+"%PY%" -m pip install --upgrade pip
+"%PY%" -m pip install --upgrade numpy sounddevice faster-whisper kokoro-onnx
+if errorlevel 1 (echo. & echo The voice packages did not install - read the red error text above. & echo Send me that text and I will fix it. & pause & exit /b 1)
+echo Installing optional online voices - Edge ...
+"%PY%" -m pip install --upgrade edge-tts
+"%PY%" -m claire.doctor
+"%PY%" -m claire.voice_setup
 pause

@@ -74,7 +74,7 @@
   .item .sub { font-size: 12px; color: var(--dim); }
   .item .star { color: #f5a03a; }
   .item button { padding: 2px 8px; font-size: 12px; }
-  .empty { color: var(--dim); padding: 18px 0; }
+  .empty { color: var(--dim); padding: 18px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .add { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
   .add input[type=text] { flex: 1; min-width: 0; background: var(--soft); border: 1px solid var(--line);
                           border-radius: 10px; color: var(--ink); font: inherit; padding: 7px 10px; }
@@ -391,7 +391,7 @@ const es = new EventSource("/events?t=" + encodeURIComponent(TOKEN));
 es.addEventListener("frame", ev => { const d = JSON.parse(ev.data); net.l = d.l; net.m = d.m; net.hf = d.hf; setState(d.s);
   $("hf").setAttribute("aria-pressed", d.hf ? "true" : "false"); });
 es.addEventListener("status", ev => { const d = JSON.parse(ev.data); speakMode = d.speak || speakMode;
-  if (panel.classList.contains("open") && tab === "voice" && !$("speed").matches(":active")) refreshVoices();
+  if (panel.classList.contains("open") && tab === "voice" && !$("speed").matches(":active")) refresh();
   $("mode").textContent = "Voice: " + speakMode;
   $("meta").textContent = [d.model, d.mouth && d.mouth.split("   [")[0]].filter(Boolean).join(" · "); });
 es.addEventListener("user", ev => { const d = JSON.parse(ev.data); $("you").textContent = (d.spoken ? "🎤 " : "") + d.text;
@@ -446,8 +446,10 @@ function setTab(t) {
   $("coreLbl").style.display = t === "mem" ? "" : "none";
   $("addForm").hidden = t === "voice"; $("speedBox").hidden = t !== "voice"; refresh();
 }
-async function refreshVoices() {
+let seq = 0;      // every refresh takes a ticket; an answer that arrives after a newer refresh started is dropped
+async function refreshVoices(my) {
   const box = $("list"), r = await api("/api/voices");
+  if (my !== seq) return;
   box.replaceChildren();
   if (!r.kind) { box.append(el("div", "empty", r.note || "I only have one voice with this setup.")); $("speedBox").hidden = true; return; }
   $("speed").value = r.speed; $("speedVal").textContent = (+r.speed).toFixed(2).replace(/0$/, "");
@@ -459,18 +461,20 @@ async function refreshVoices() {
     const acts = el("div", "acts"), tryB = el("button", "", "Try"), useB = el("button", "", "Use");
     tryB.type = useB.type = "button"; tryB.title = "Hear it (I go back to my own voice after)"; useB.title = "Keep this voice";
     tryB.addEventListener("click", () => api("/api/voice_try", { name: v.name }));
-    useB.addEventListener("click", async () => { await api("/api/voice_use", { name: v.name }); refreshVoices(); });
+    useB.addEventListener("click", async () => { await api("/api/voice_use", { name: v.name }); refresh(); });
     acts.append(tryB, useB); row.append(body, acts); box.append(row);
   }
 }
 async function refresh() {
-  if (tab === "voice") return refreshVoices();
-  const box = $("list"), r = await api(tab === "mem" ? "/api/memories" : "/api/journal"), items = r.items || [];
+  const my = ++seq, t = tab;                  // draw with the tab this request was made for, never whatever is current later
+  if (t === "voice") return refreshVoices(my);
+  const box = $("list"), r = await api(t === "mem" ? "/api/memories" : "/api/journal"), items = r.items || [];
+  if (my !== seq) return;
   box.replaceChildren();
-  if (!items.length) { box.append(el("div", "empty", tab === "mem" ? "Nothing yet. Tell me something below." : "My journal is empty.")); return; }
+  if (!items.length) { box.append(el("div", "empty", t === "mem" ? "Nothing yet. Tell me something below." : "My journal is empty.")); return; }
   for (const it of items) {
     const row = el("div", "item"), body = el("div", "txt");
-    if (tab === "mem") {
+    if (t === "mem") {
       const line = el("div"); if (it.kind === "core") line.append(el("span", "star", "★ ")); line.append(document.createTextNode(it.text));
       body.append(line, el("div", "sub", `#${it.id} · ${it.source} · ${it.created}`));
       const x = el("button", "", "Forget"); x.type = "button"; x.title = "Forget this";
@@ -488,7 +492,7 @@ $("panelClose").addEventListener("click", () => setPanel(false));
 $("tabMem").addEventListener("click", () => setTab("mem"));
 $("tabJour").addEventListener("click", () => setTab("jour"));
 $("tabVoice").addEventListener("click", () => setTab("voice"));
-$("voiceBtn").addEventListener("click", () => { setPanel(true); setTab("voice"); });
+$("voiceBtn").addEventListener("click", () => { setTab("voice"); setPanel(true); });
 let speedTimer = 0;
 $("speed").addEventListener("input", () => { $("speedVal").textContent = (+$("speed").value).toFixed(2).replace(/0$/, "");
   clearTimeout(speedTimer); speedTimer = setTimeout(() => api("/api/speed", { value: +$("speed").value }), 350); });

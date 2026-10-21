@@ -369,5 +369,49 @@ class VoiceApi(HttpCase):
         self.assertEqual(self.call("/api/speed")[0], 400)
 
 
+def _browser_available():
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            pw.chromium.launch().close()
+        return True
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_browser_available(), "needs a headless browser (skipped on normal PCs)")
+class PanelRace(unittest.TestCase):
+    """Regression: opening Voice starts the memories list first; if that slower answer arrived last it was drawn
+    with the wrong layout (rows of 'undefined') on top of the voices."""
+
+    def test_slow_memories_answer_never_overwrites_the_voice_tab(self):
+        from playwright.sync_api import sync_playwright
+        saved, config.save_setting = config.save_setting, (lambda *a, **k: None)
+        s, _ = make_session()
+        for i in range(6):
+            s.remember(f"Fact number {i}")
+        srv = web.Server(s, 0)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with sync_playwright() as pw:
+                b = pw.chromium.launch()
+                pg = b.new_page()
+                pg.route("**/api/memories", lambda route: (time.sleep(0.8), route.continue_()))
+                pg.goto(srv.url)
+                pg.click("#voiceBtn")
+                pg.wait_for_selector("#list .item")
+                time.sleep(1.6)                                  # long enough for the slow answer to arrive
+                text = pg.inner_text("#list")
+                b.close()
+            self.assertNotIn("undefined", text)
+            self.assertIn("Heart", text)
+            self.assertNotIn("Fact number", text)
+        finally:
+            srv.stopping = True
+            srv.shutdown()
+            srv.server_close()
+            config.save_setting = saved
+
+
 if __name__ == "__main__":
     unittest.main()

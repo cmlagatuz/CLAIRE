@@ -1,14 +1,20 @@
-# C.L.A.I.R.E. — v2.4.0 · Phase 3 (Face)
+# C.L.A.I.R.E. — v2.4.1 · Phase 3 (Face)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ## Setup
 1. **Python 3.12** (3.10–3.13 work) — https://www.python.org/downloads/ · tick **Add python.exe to PATH**.
 2. **Ollama** — https://ollama.com/download (leave it running).
 3. Unzip this folder, e.g. `C:\CLAIRE`. Moving from an older version? Copy your old `data` folder in.
-4. **setup_claire.bat** — downloads her brain, runs the self-test.
-5. **setup_voice.bat** — installs her ears and her natural voice, opens the **Voice Studio**, tests the mic.
+4. **setup_claire.bat** — gives her her *own* Python (a `.venv` folder, built from Python 3.10–3.13 even if a newer Python is
+   also installed), downloads her brain, runs the self-test.
+5. **setup_voice.bat** — installs her ears and her natural voice into that Python, opens the **Voice Studio**, tests the mic.
+   If a package fails to install it stops and shows the error — send that text to get it fixed.
 6. **start_claire.bat** — talk to her in the terminal, or **window.bat** — open her window (below).
 If `.bat` files are blocked, rename the `.bat.txt` copies.
+
+**Something not working (no natural voice, no microphone…)?** Run **doctor.bat**. It checks Python, every package, the voice
+files, microphone, speakers and Ollama, and says exactly what to do about each ✗. Her voice files can be present while the
+Python package that uses them is not — doctor.bat shows that difference.
 
 ## Her window (new)
 Run **window.bat** (or `python -m claire --window`). A window opens with a living network of light — the way she looks while she

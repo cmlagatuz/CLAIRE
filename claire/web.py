@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import __version__
+from . import __version__, doctor
 from .brain import BrainOffline
 from .cli import HUSH, STOP_LISTENING, VOICE_INTENTS, App
 from .signals import signals
@@ -275,9 +275,9 @@ class WebSession:
     def voices(self):
         vc = self.vc
         kind = vc.kind()
+        why = self.app.vk.mouth_note or "This voice engine has just one voice. Run setup_voice.bat to give me my natural voices."
         return {"kind": kind, "current": vc.current(), "speed": vc.speed(), "items": vc.items(),
-                "note": "" if kind else (self.app.vk.mouth_note or "This voice engine has just one voice. "
-                                         "Run setup_voice.bat to give me my natural voices.")}
+                "note": "" if kind else f"{why}\n\nRun doctor.bat to see exactly what is missing.\n{doctor.python_note()}"}
 
     def voice_try(self, name):
         """Hear a voice without keeping it: she says hello in it, then goes back to her own."""

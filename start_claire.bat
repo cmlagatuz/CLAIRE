@@ -1,6 +1,8 @@
 @echo off
 title C.L.A.I.R.E.
 cd /d "%~dp0"
-where python >nul 2>nul || (echo Python is not installed. Get it from https://www.python.org/downloads/ ^(tick "Add to PATH"^). & pause & exit /b)
-python -m claire
+if not exist ".venv\Scripts\python.exe" where python >nul 2>nul || (echo Python is not installed. Run setup_claire.bat first. & pause & exit /b 1)
+set "PY=python"
+if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
+"%PY%" -m claire
 pause
