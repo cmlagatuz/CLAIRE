@@ -25,6 +25,7 @@ Rules for every phase: **local first** · **ask before acting** · **tests must 
 | 3.2 | Global hotkey (Ctrl+Alt+C) + optional tray icon | ✅ v2.3 |
 | 3.3 | Memory & journal viewer/editor | ✅ v2.3 |
 | 3.4 | Light/dark theme (auto / dark / light) | ✅ v2.3 |
+| 3.6 | Choose her voice by talking (“change your voice”) + Voice tab with Try / Use / speed | ✅ v2.4 |
 
 ## Phase 4 · Hands — tools on the PC (ask before acting)
 ## Phase 5 · Knowledge — your documents, with sources

@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.3.0 · Phase 3 (Face)
+# C.L.A.I.R.E. — v2.4.0 · Phase 3 (Face)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ## Setup
@@ -23,6 +23,12 @@ works. It needs nothing new to install and never leaves this PC (it listens on `
 
 In the window: type and press Enter · **Talk** (or Ctrl+Space) for push-to-talk · **Hands-free** for “Hey Claire” ·
 **Voice: auto/on/off** · **Stop** (or Esc). With the online Edge voice she can't be measured, so the network animates by itself while she speaks.
+**Choosing her voice.** Say or type **“change your voice”**: she names her voices (American: Heart, Bella, Nicole…; British: Emma,
+Isabella…) and listens for your answer — a name (“Bella”), “the second one”, “faster” / “slower”, then “keep it” or “never mind”.
+In hands-free mode she listens for your answer without “Hey Claire” again. The **Voice** button opens the same choices as a list
+with **Try** (hear it, then she goes back to her own voice), **Use** (keep it) and a speed slider. She also obeys “speak slower” any time.
+(Needs the natural voices from setup_voice.bat; with the basic Windows voice she'll tell you.)
+
 **Memory** button (top right): see everything she remembers (★ = core facts about you), add a memory, make it core, or
 **Forget** one; the **Journal** tab shows her story and lets you add a note. **Theme**: auto (follows Windows) / dark / light.
 

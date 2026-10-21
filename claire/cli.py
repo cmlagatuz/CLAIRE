@@ -9,6 +9,7 @@ from . import __version__, config
 from .brain import BrainOffline
 from .core import Claire
 from .voice import EDGE_VOICES, KOKORO_VOICES, SentenceBuffer, VoiceKit
+from .voicechat import VoiceChooser
 
 P, G, D, R = "\033[38;5;141m", "\033[38;5;245m", "\033[0m", "\033[38;5;203m"
 HELP = """Talk
@@ -16,6 +17,7 @@ HELP = """Talk
   /handsfree           listen for "Hey Claire …" (Ctrl+C or say "stop listening" to return)
 Voice
   /voice               status · /voice on | off | auto  (auto = answers aloud when you spoke)
+  say or type "change your voice" — she names her voices and you pick one by name (also "faster"/"slower")
   /voice list          her voices · /voice try <name> · /voice use <name>
   /voice speed 0.95    slower/faster · /voice engine kokoro | edge | windows
   /voice studio        open the Voice Studio · /voice test · /mute · /unmute · /stop
@@ -47,6 +49,13 @@ class App:
         if speak and self.vk.mode != "off" and self.vk.speaker:
             self.vk.speaker.say(text)
 
+    @property
+    def chooser(self):
+        """The spoken 'change your voice' conversation (made on first use)."""
+        if getattr(self, "_chooser", None) is None:
+            self._chooser = VoiceChooser(self.vk, self.say_line, self.user, self.c.milestone)
+        return self._chooser
+
     def set_mode(self, m):
         self.vk.set_mode(m)
         config.save_setting("voice.speak", m)
@@ -65,6 +74,8 @@ class App:
             if rx.match(text):
                 self.say_line(self.set_mode(mode), speak=(mode != "off"))
                 return True
+        if self.chooser.handle(text):
+            return True
         if spoken and STOP_LISTENING.search(text):
             self.say_line(f"Okay {self.user}, back to typing.")
             return False
@@ -143,7 +154,7 @@ class App:
             elif n != "end":
                 print(f"{R}{n}{D}")
         try:
-            self.vk.handsfree(on_command, on_note, stop)
+            self.vk.handsfree(on_command, on_note, stop, follow_up=lambda: self.chooser.pending)
         except KeyboardInterrupt:
             stop.set()
             print(f"\n{G}Back to typing.{D}")

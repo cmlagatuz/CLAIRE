@@ -20,6 +20,7 @@ from .brain import BrainOffline
 from .cli import HUSH, STOP_LISTENING, VOICE_INTENTS, App
 from .signals import signals
 from .voice import SentenceBuffer
+from .voicechat import VoiceChooser, VoiceControl
 
 PAGE = Path(__file__).resolve().parent / "ui" / "orb.html"
 DEFAULT_PORT = 8765
@@ -63,6 +64,8 @@ class WebSession:
         self.listen_lock = threading.Lock()
         self.hf_stop = None
         self.info = {"user": self.app.user, "version": __version__, "ready": False}
+        self.chooser = VoiceChooser(self.app.vk, self._say, self.app.user, self.app.c.milestone)
+        self.vc = self.chooser.ctl
 
     # ---------------- state the window draws ----------------
     def frame(self):
@@ -146,6 +149,8 @@ class WebSession:
                 self._say(a.set_mode(mode), speak=(mode != "off"))
                 self.hub.publish("status", **self.status())
                 return True
+        if self.chooser.handle(text):
+            return True
         if spoken and STOP_LISTENING.search(text):
             self._say(f"Okay {a.user}, back to typing.")
             return False
@@ -211,6 +216,13 @@ class WebSession:
             self.listen_lock.release()
         self.turn(text, spoken=True)
 
+    def _follow_up(self):
+        """She asked you something (e.g. which voice) and is waiting for the answer — no wake word needed."""
+        if self.chooser.pending:
+            signals.activity = "listening"
+            return True
+        return False
+
     def set_handsfree(self, on):
         if on and self.hf_stop is None:
             self.hf_stop = threading.Event()
@@ -250,7 +262,7 @@ class WebSession:
                 return
             signals.activity = "idle"
             self.hub.publish("note", text=f"Hands-free on. Say “{words}, …”.")
-            vk.handsfree(on_command, on_note, stop)
+            vk.handsfree(on_command, on_note, stop, follow_up=self._follow_up)
         except Exception as e:
             self.hub.publish("error", text=f"Listening stopped: {e}")
         finally:
@@ -258,6 +270,54 @@ class WebSession:
             signals.activity = "idle"
             self.hf_stop = None
             self.hub.publish("handsfree", on=False)
+
+    # ---------------- her voice (the window's Voice tab) ----------------
+    def voices(self):
+        vc = self.vc
+        kind = vc.kind()
+        return {"kind": kind, "current": vc.current(), "speed": vc.speed(), "items": vc.items(),
+                "note": "" if kind else (self.app.vk.mouth_note or "This voice engine has just one voice. "
+                                         "Run setup_voice.bat to give me my natural voices.")}
+
+    def voice_try(self, name):
+        """Hear a voice without keeping it: she says hello in it, then goes back to her own."""
+        if name not in self.vc.catalog():
+            return False
+        threading.Thread(target=self._try_voice, args=(name,), daemon=True).start()
+        return True
+
+    def _try_voice(self, name):
+        vk = self.app.vk
+        with self.turn_lock:
+            old = self.vc.current()
+            try:
+                vk.speaker.stop()
+                self.vc.set_voice(name)
+                vk.speaker.say(f"Hi {self.app.user}, I'm Claire. Would you like me to sound like this?")
+                vk.speaker.wait()
+            except Exception as e:
+                self.hub.publish("error", text=f"Couldn't try that voice: {e}")
+            finally:
+                try:
+                    self.vc.set_voice(old, check=False)
+                except Exception:
+                    pass
+
+    def voice_use(self, name):
+        if name not in self.vc.catalog():
+            return False
+        self.chooser.pending = False
+        self.vc.set_voice(name, persist=True)
+        self.app.c.milestone(f"Chose my voice: {name}", f"{self.vc.kind()} engine")
+        self.hub.publish("status", **self.status())
+        return True
+
+    def voice_speed(self, value):
+        if not self.vc.kind():
+            return None
+        x = self.vc.set_speed(value)
+        self.hub.publish("status", **self.status())
+        return x
 
     # ---------------- her memory & journal (the window's side panel) ----------------
     def memories(self):
@@ -372,6 +432,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if path == "/api/mode":
             return self._send(200, {"ok": s.set_mode(str(body.get("mode", "")))})
+        if path == "/api/voices":
+            return self._send(200, s.voices())
+        if path == "/api/voice_try":
+            return self._send(200, {"ok": s.voice_try(str(body.get("name", "")))})
+        if path == "/api/voice_use":
+            return self._send(200, {"ok": s.voice_use(str(body.get("name", "")))})
+        if path == "/api/speed":
+            try:
+                return self._send(200, {"speed": s.voice_speed(float(body.get("value")))})
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "bad speed"})
         if path == "/api/memories":
             return self._send(200, {"items": s.memories()})
         if path == "/api/remember":

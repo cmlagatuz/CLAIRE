@@ -79,6 +79,10 @@
   .add input[type=text] { flex: 1; min-width: 0; background: var(--soft); border: 1px solid var(--line);
                           border-radius: 10px; color: var(--ink); font: inherit; padding: 7px 10px; }
   .add label { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 5px; }
+  .add[hidden] { display: none; }
+  .item .who { font-weight: 600; }
+  .item .now { color: var(--accent); }
+  .item .acts { display: flex; gap: 6px; }
   @media (max-width: 560px) { .dock { flex-wrap: wrap; } .dock input { flex-basis: 100%; } .meta { display: none; } }
   @media (prefers-reduced-motion: reduce) { .caption, .dot, .panel { transition: none; } }
 </style>
@@ -93,6 +97,7 @@
   </div>
   <div>
     <div class="tools">
+      <button type="button" id="voiceBtn" title="Choose how I sound">Voice</button>
       <button type="button" id="memBtn" title="What I remember, and my journal">Memory</button>
       <button type="button" id="themeBtn" title="Light or dark">Theme: auto</button>
     </div>
@@ -105,10 +110,16 @@
     <div class="tabs">
       <button type="button" id="tabMem" aria-pressed="true">Memories</button>
       <button type="button" id="tabJour" aria-pressed="false">Journal</button>
+      <button type="button" id="tabVoice" aria-pressed="false">Voice</button>
     </div>
     <button type="button" id="panelClose" aria-label="Close panel">✕</button>
   </header>
   <div class="list" id="list"></div>
+  <div class="add" id="speedBox" hidden>
+    <label for="speed" style="flex:1">Speed <span id="speedVal">1.0</span>
+      <input type="range" id="speed" min="0.7" max="1.4" step="0.05" value="1" style="flex:1;min-width:120px"></label>
+    <span class="sub" style="font-size:12px;color:var(--dim)">or just say “faster” / “slower”</span>
+  </div>
   <form class="add" id="addForm" autocomplete="off">
     <input type="text" id="addText" maxlength="500" placeholder="Tell me something to remember…" aria-label="New entry">
     <label id="coreLbl"><input type="checkbox" id="addCore"> core fact about me</label>
@@ -380,6 +391,7 @@ const es = new EventSource("/events?t=" + encodeURIComponent(TOKEN));
 es.addEventListener("frame", ev => { const d = JSON.parse(ev.data); net.l = d.l; net.m = d.m; net.hf = d.hf; setState(d.s);
   $("hf").setAttribute("aria-pressed", d.hf ? "true" : "false"); });
 es.addEventListener("status", ev => { const d = JSON.parse(ev.data); speakMode = d.speak || speakMode;
+  if (panel.classList.contains("open") && tab === "voice" && !$("speed").matches(":active")) refreshVoices();
   $("mode").textContent = "Voice: " + speakMode;
   $("meta").textContent = [d.model, d.mouth && d.mouth.split("   [")[0]].filter(Boolean).join(" · "); });
 es.addEventListener("user", ev => { const d = JSON.parse(ev.data); $("you").textContent = (d.spoken ? "🎤 " : "") + d.text;
@@ -429,10 +441,30 @@ function setPanel(open) {
 }
 function setTab(t) {
   tab = t; $("tabMem").setAttribute("aria-pressed", t === "mem"); $("tabJour").setAttribute("aria-pressed", t === "jour");
+  $("tabVoice").setAttribute("aria-pressed", t === "voice");
   $("addText").placeholder = t === "mem" ? "Tell me something to remember…" : "Add a note to my journal…";
-  $("coreLbl").style.display = t === "mem" ? "" : "none"; refresh();
+  $("coreLbl").style.display = t === "mem" ? "" : "none";
+  $("addForm").hidden = t === "voice"; $("speedBox").hidden = t !== "voice"; refresh();
+}
+async function refreshVoices() {
+  const box = $("list"), r = await api("/api/voices");
+  box.replaceChildren();
+  if (!r.kind) { box.append(el("div", "empty", r.note || "I only have one voice with this setup.")); $("speedBox").hidden = true; return; }
+  $("speed").value = r.speed; $("speedVal").textContent = (+r.speed).toFixed(2).replace(/0$/, "");
+  for (const v of r.items) {
+    const row = el("div", "item"), body = el("div", "txt"), line = el("div", "who");
+    if (v.name === r.current) line.append(el("span", "now", "● "));
+    line.append(document.createTextNode(v.who));
+    body.append(line, el("div", "sub", v.desc));
+    const acts = el("div", "acts"), tryB = el("button", "", "Try"), useB = el("button", "", "Use");
+    tryB.type = useB.type = "button"; tryB.title = "Hear it (I go back to my own voice after)"; useB.title = "Keep this voice";
+    tryB.addEventListener("click", () => api("/api/voice_try", { name: v.name }));
+    useB.addEventListener("click", async () => { await api("/api/voice_use", { name: v.name }); refreshVoices(); });
+    acts.append(tryB, useB); row.append(body, acts); box.append(row);
+  }
 }
 async function refresh() {
+  if (tab === "voice") return refreshVoices();
   const box = $("list"), r = await api(tab === "mem" ? "/api/memories" : "/api/journal"), items = r.items || [];
   box.replaceChildren();
   if (!items.length) { box.append(el("div", "empty", tab === "mem" ? "Nothing yet. Tell me something below." : "My journal is empty.")); return; }
@@ -455,6 +487,11 @@ $("memBtn").addEventListener("click", () => setPanel(!panel.classList.contains("
 $("panelClose").addEventListener("click", () => setPanel(false));
 $("tabMem").addEventListener("click", () => setTab("mem"));
 $("tabJour").addEventListener("click", () => setTab("jour"));
+$("tabVoice").addEventListener("click", () => setTab("voice"));
+$("voiceBtn").addEventListener("click", () => { setPanel(true); setTab("voice"); });
+let speedTimer = 0;
+$("speed").addEventListener("input", () => { $("speedVal").textContent = (+$("speed").value).toFixed(2).replace(/0$/, "");
+  clearTimeout(speedTimer); speedTimer = setTimeout(() => api("/api/speed", { value: +$("speed").value }), 350); });
 $("addForm").addEventListener("submit", async e => {
   e.preventDefault(); const v = $("addText").value.trim(); if (!v) return;
   await api(tab === "mem" ? "/api/remember" : "/api/journal_add", { text: v, core: $("addCore").checked });

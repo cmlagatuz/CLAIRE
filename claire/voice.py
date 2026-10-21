@@ -678,7 +678,8 @@ class VoiceKit:
             mouth += "   [skipped: " + self.mouth_note + "]"
         return {"mouth": mouth, "ears": ears, "speak": self.mode, "wake": self.v.get("wake_engine", "whisper")}
 
-    def handsfree(self, on_command, on_note, stop_event):
+    def handsfree(self, on_command, on_note, stop_event, follow_up=None):
+        """`follow_up()` → True while she is waiting for your answer: she then listens again without the wake word."""
         ears = self.ears
         if not ears:
             on_note("I can't listen: " + self.ears_note)
@@ -703,5 +704,13 @@ class VoiceKit:
                 cmd = ears.listen(stop_event, max_wait=6, max_len=20)
             if cmd:
                 on_command(cmd)
+                while follow_up and follow_up() and not stop_event.is_set():
+                    if self._speaker:
+                        self._speaker.wait()
+                    more = ears.listen(stop_event, max_wait=8, max_len=20)
+                    if not more:
+                        on_note("end")             # no answer: the next command needs "Hey Claire" again
+                        break
+                    on_command(more)
             else:
                 on_note("end")                     # she was called but nothing followed
