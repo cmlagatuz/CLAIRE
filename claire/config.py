@@ -13,7 +13,7 @@ DEFAULTS = {
     "recent_turns_kept": 12,
     "auto_memory": True,
     "data_dir": "data",
-    "ui": {"port": 8765, "open": True},    # Phase 3: her window
+    "ui": {"port": 8765, "open": True, "hotkey": "ctrl+alt+c", "tray": True},    # Phase 3: her window
     "voice": {
         "enabled": True,
         "speak": "auto",

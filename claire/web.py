@@ -58,6 +58,7 @@ class WebSession:
     def __init__(self, app=None):
         self.app = app or App()
         self.hub = Hub()
+        self.store_lock = threading.Lock()         # the window's memory panel, one query at a time
         self.turn_lock = threading.Lock()          # one conversation turn at a time
         self.listen_lock = threading.Lock()
         self.hf_stop = None
@@ -258,6 +259,35 @@ class WebSession:
             self.hf_stop = None
             self.hub.publish("handsfree", on=False)
 
+    # ---------------- her memory & journal (the window's side panel) ----------------
+    def memories(self):
+        with self.store_lock:
+            return [{"id": r["id"], "text": r["text"], "kind": r["kind"], "source": r["source"],
+                     "created": r["created"][:10]} for r in self.app.c.store.memories()]
+
+    def remember(self, text, core=False):
+        text = (text or "").strip()[:500]
+        if not text:
+            return None
+        with self.store_lock:
+            return self.app.c.store.remember(text, "core" if core else "fact", "you")
+
+    def forget(self, ident):
+        with self.store_lock:
+            return self.app.c.store.forget(ident) if str(ident).isdigit() else []
+
+    def journal(self):
+        with self.store_lock:
+            return [{"id": r["id"], "at": r["at"][:10], "title": r["title"], "detail": r["detail"] or ""}
+                    for r in reversed(self.app.c.store.journal())]
+
+    def journal_add(self, note):
+        note = (note or "").strip()[:500]
+        if note:
+            with self.store_lock:
+                self.app.c.store.journal_add(note)
+        return bool(note)
+
     # ---------------- small controls ----------------
     def stop_speaking(self):
         if self.app.vk.speaker:
@@ -342,6 +372,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True})
         if path == "/api/mode":
             return self._send(200, {"ok": s.set_mode(str(body.get("mode", "")))})
+        if path == "/api/memories":
+            return self._send(200, {"items": s.memories()})
+        if path == "/api/remember":
+            return self._send(200, {"id": s.remember(str(body.get("text", "")), bool(body.get("core")))})
+        if path == "/api/forget":
+            return self._send(200, {"gone": s.forget(body.get("id", ""))})
+        if path == "/api/journal":
+            return self._send(200, {"items": s.journal()})
+        if path == "/api/journal_add":
+            return self._send(200, {"ok": s.journal_add(str(body.get("text", "")))})
         self._send(404, {"error": "not found"})
 
     def _events(self):
@@ -401,10 +441,11 @@ def open_window(url):
     if sys.platform.startswith("win"):
         for exe in ("msedge", "chrome"):
             try:
-                subprocess.Popen(["cmd", "/c", "start", "", exe, f"--app={url}", "--window-size=1100,820"],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return
-            except OSError:
+                done = subprocess.run(["cmd", "/c", "start", "", exe, f"--app={url}", "--window-size=1100,820"],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                if done.returncode == 0:               # `start` reports an error when that browser isn't installed
+                    return
+            except (OSError, subprocess.SubprocessError):
                 continue
     webbrowser.open(url)
 
@@ -416,10 +457,40 @@ def main(open_browser=True, port=None):
         except Exception:
             pass
     session = WebSession()
-    server = Server(session, port or session.app.c.cfg.get("ui", {}).get("port", DEFAULT_PORT))
+    ui = session.app.c.cfg.get("ui", {})
+    server = Server(session, port or ui.get("port", DEFAULT_PORT))
     print(f"✦ C.L.A.I.R.E. {__version__} · her window is at {server.url}  (Ctrl+C to close)")
     threading.Thread(target=session.warm_up, daemon=True).start()
-    if open_browser and session.app.c.cfg.get("ui", {}).get("open", True):
+
+    def show():
+        if not session.hub.subs:                       # her window was closed: bring it back
+            open_window(server.url)
+
+    def talk():
+        show()
+        session.talk()
+
+    def quit_app():
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    from . import tray
+    hotkey = None
+    if ui.get("hotkey"):
+        try:
+            hotkey = tray.Hotkey(ui["hotkey"], talk)
+            hotkey.start()
+            print(f"  Hotkey {ui['hotkey']}: press it anywhere and I'll listen.")
+        except (ValueError, RuntimeError) as e:
+            print(f"  (No hotkey: {e})")
+            hotkey = None
+    icon = None
+    if ui.get("tray", True):
+        icon, why = tray.start_tray(show, session.talk, quit_app)
+        if icon:
+            print("  Tray icon is on — right-click it for Open / Talk / Quit.")
+        elif why and sys.platform.startswith("win"):
+            print(f"  (No tray icon: {why})")
+    if open_browser and ui.get("open", True):
         open_window(server.url)
     try:
         server.serve_forever()
@@ -428,6 +499,13 @@ def main(open_browser=True, port=None):
     finally:
         server.stopping = True
         print("Reflecting on our chat…")
+        if hotkey:
+            hotkey.stop()
+        if icon:
+            try:
+                icon.stop()
+            except Exception:
+                pass
         session.close()
         server.server_close()
 

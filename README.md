@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.2.0 · Phase 3 (Face) in progress
+# C.L.A.I.R.E. — v2.3.0 · Phase 3 (Face)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ## Setup
@@ -23,7 +23,12 @@ works. It needs nothing new to install and never leaves this PC (it listens on `
 
 In the window: type and press Enter · **Talk** (or Ctrl+Space) for push-to-talk · **Hands-free** for “Hey Claire” ·
 **Voice: auto/on/off** · **Stop** (or Esc). With the online Edge voice she can't be measured, so the network animates by itself while she speaks.
-Settings: `"ui": {"port": 8765, "open": true}` in settings.json.
+**Memory** button (top right): see everything she remembers (★ = core facts about you), add a memory, make it core, or
+**Forget** one; the **Journal** tab shows her story and lets you add a note. **Theme**: auto (follows Windows) / dark / light.
+
+**Anywhere on your PC:** press **Ctrl+Alt+C** and she starts listening (her window reopens if you closed it). For a tray icon
+(Open · Talk · Quit) run `pip install pystray pillow` once; it is optional.
+Settings in settings.json: `"ui": {"port": 8765, "open": true, "hotkey": "ctrl+alt+c", "tray": true}` — set `"hotkey": ""` to turn the hotkey off.
 
 ## Her voice
 | Engine | Quality | Where it runs | Notes |

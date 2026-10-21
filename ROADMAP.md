@@ -17,14 +17,14 @@ Rules for every phase: **local first** · **ask before acting** · **tests must 
 | 2.4 | Push-to-talk, voice modes auto/on/off, mute & stop by voice | ✅ |
 | 2.5 | Natural spoken answers; journal entries "Found my voice", "Chose my voice" | ✅ |
 
-## Phase 3 · Face: desktop app  🚧 in progress (v2.2.0)
+## Phase 3 · Face: desktop app  ✅ complete (v2.3.0)
 | # | Milestone | Status |
 |---|---|---|
 | 3.1 | Chat window (local web UI, this PC only) | ✅ v2.2 |
 | 3.5 | Living neural-network orb: idle · listening (your voice) · thinking · speaking (her voice) · Talk button | ✅ v2.2 |
-| 3.2 | Tray icon + global hotkey | ⏭ next |
-| 3.3 | Memory & journal viewer/editor | ⏭ |
-| 3.4 | Light/dark theme | ⏭ |
+| 3.2 | Global hotkey (Ctrl+Alt+C) + optional tray icon | ✅ v2.3 |
+| 3.3 | Memory & journal viewer/editor | ✅ v2.3 |
+| 3.4 | Light/dark theme (auto / dark / light) | ✅ v2.3 |
 
 ## Phase 4 · Hands — tools on the PC (ask before acting)
 ## Phase 5 · Knowledge — your documents, with sources

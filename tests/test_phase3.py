@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from claire import cli, signals as sig, voice, web                 # noqa: E402
+from claire import cli, tray, voice, web                          # noqa: E402
 from claire.signals import envelope, mic_level, signals           # noqa: E402
 from claire.voice import Speaker, VoiceKit                        # noqa: E402
 try:
@@ -187,15 +187,17 @@ class State(unittest.TestCase):
         return out
 
 
-class Safety(unittest.TestCase):
+class HttpCase(unittest.TestCase):
+    """A real local server + helpers to call it. Subclasses set cls.session in make_session()."""
+    __test__ = False
+
+    @classmethod
+    def make_session(cls):
+        raise NotImplementedError
+
     @classmethod
     def setUpClass(cls):
-        cls.said = []
-        cls.session = SimpleNamespace(
-            hub=web.Hub(), submit=lambda t, spoken=False: cls.said.append(t) or True, talk=lambda: True,
-            set_handsfree=lambda on: on, stop_speaking=lambda: None, set_mode=lambda m: True,
-            frame=lambda: {"s": "idle", "l": None, "m": 0.0, "hf": False},
-            status=lambda: {"model": "m", "mouth": "x", "speak": "auto"})
+        cls.session = cls.make_session()
         cls.srv = web.Server(cls.session, 0)
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
 
@@ -219,6 +221,19 @@ class Safety(unittest.TestCase):
         h = {"Content-Type": "application/json", "X-Claire-Token": self.srv.token}
         h.update(kw.pop("headers", {}))
         return self.req("POST", path, body, headers=h, **kw)
+
+
+class Safety(HttpCase):
+    __test__ = True
+
+    @classmethod
+    def make_session(cls):
+        cls.said = []
+        return SimpleNamespace(
+            hub=web.Hub(), submit=lambda t, spoken=False: cls.said.append(t) or True, talk=lambda: True,
+            set_handsfree=lambda on: on, stop_speaking=lambda: None, set_mode=lambda m: True,
+            frame=lambda: {"s": "idle", "l": None, "m": 0.0, "hf": False},
+            status=lambda: {"model": "m", "mouth": "x", "speak": "auto"})
 
     def test_only_loopback_and_never_open_to_the_network(self):
         self.assertEqual(self.srv.server_address[0], "127.0.0.1")
@@ -264,6 +279,95 @@ class Safety(unittest.TestCase):
         c.close()
         self.assertIn(b"event: status", text)
         self.assertGreaterEqual(text.count(b"event: frame"), 2)
+
+
+class Hotkeys(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(tray.parse_hotkey("ctrl+alt+c"), (0x2 | 0x1, ord("C")))
+        self.assertEqual(tray.parse_hotkey("Ctrl + Shift + F9"), (0x2 | 0x4, 0x6F + 9))
+        self.assertEqual(tray.parse_hotkey("win+space"), (0x8, 0x20))
+        self.assertEqual(tray.parse_hotkey("alt+5"), (0x1, ord("5")))
+
+    def test_refuses_keys_that_would_break_typing(self):
+        for bad in ("c", "shift+c", "ctrl+", "ctrl+alt+nonsense", "hyper+c", ""):
+            with self.assertRaises(ValueError, msg=bad):
+                tray.parse_hotkey(bad)
+
+    def test_not_windows_fails_softly(self):
+        if sys.platform.startswith("win"):
+            self.skipTest("this machine is Windows")
+        hk = tray.Hotkey("ctrl+alt+c", lambda: None)
+        with self.assertRaises(RuntimeError):
+            hk.start()
+        hk.stop()                                           # harmless when it never started
+
+    def test_tray_is_optional(self):
+        icon, why = tray.start_tray(lambda: None, lambda: None, lambda: None)
+        if icon is None:
+            self.assertIn("pystray", why)
+        else:
+            icon.stop()
+
+
+class MemoryPanel(unittest.TestCase):
+    def setUp(self):
+        self.s, self.a = make_session()
+
+    def test_remember_list_forget(self):
+        self.assertTrue(self.s.remember("Carl likes tea"))
+        self.assertTrue(self.s.remember("Carl is a night owl", core=True))
+        self.assertIsNone(self.s.remember("Carl likes tea"))          # duplicates are ignored
+        self.assertIsNone(self.s.remember("   "))
+        rows = self.s.memories()
+        self.assertEqual([r["kind"] for r in rows], ["fact", "core"])
+        self.assertEqual(self.s.forget(rows[0]["id"]), ["Carl likes tea."])
+        self.assertEqual(len(self.s.memories()), 1)
+        self.assertEqual(self.s.forget("not a number"), [])           # the panel only forgets by id
+
+    def test_journal_newest_first(self):
+        n = len(self.s.journal())
+        self.assertTrue(self.s.journal_add("A new thing"))
+        self.assertFalse(self.s.journal_add("  "))
+        j = self.s.journal()
+        self.assertEqual((len(j), j[0]["title"]), (n + 1, "A new thing"))
+
+    def test_long_text_is_capped(self):
+        self.s.remember("x" * 5000)
+        self.assertLessEqual(len(self.s.memories()[0]["text"]), 501)
+
+
+class MemoryApi(HttpCase):
+    """The same security rules cover the memory endpoints."""
+    __test__ = True
+
+    @classmethod
+    def make_session(cls):
+        s, cls.app = make_session()
+        return s
+
+    def call(self, path, **body):
+        code, data = self.post(path, body=json.dumps(body).encode())
+        return code, json.loads(data)
+
+    def test_roundtrip_over_http(self):
+        self.assertEqual(self.call("/api/remember", text="Carl lives in Riyadh", core=True)[0], 200)
+        code, out = self.call("/api/memories")
+        self.assertEqual(code, 200)
+        item = [i for i in out["items"] if "Riyadh" in i["text"]][0]
+        self.assertEqual(item["kind"], "core")
+        self.assertEqual(self.call("/api/forget", id=item["id"])[1]["gone"], ["Carl lives in Riyadh."])
+        self.call("/api/journal_add", text="http note")
+        self.assertEqual(self.call("/api/journal")[1]["items"][0]["title"], "http note")
+
+    def test_memory_is_not_readable_without_the_secret(self):
+        for path in ("/api/memories", "/api/journal"):
+            self.assertEqual(self.req("POST", path, b"{}", headers={"Content-Type": "application/json"})[0], 403)
+            self.assertEqual(self.post(path, headers={"X-Claire-Token": "wrong"})[0], 403)
+            self.assertEqual(self.req("GET", path)[0], 404)         # and never as a plain link
+
+    def test_page_never_builds_html_from_memories(self):
+        html = web.PAGE.read_text(encoding="utf-8")
+        self.assertNotIn("innerHTML", html)
 
 
 if __name__ == "__main__":

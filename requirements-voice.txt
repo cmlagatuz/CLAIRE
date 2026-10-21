@@ -7,3 +7,5 @@ kokoro-onnx>=0.4.9        # her neural voice (Kokoro-82M), offline
 # edge-tts>=7.0           # Microsoft's online neural voices (text is sent to Microsoft)
 # piper-tts>=1.3          # older offline voice engine
 # openwakeword>=0.6.0     # lighter always-on wake word
+# pystray>=0.19         # Phase 3: tray icon for her window (also needs: pillow)
+# pillow>=10
