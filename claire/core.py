@@ -37,6 +37,15 @@ HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files
               "You cannot delete, send, install or run commands; if asked, say you can't do that. "
               "Never claim an action happened unless a tool result says it did.")
 
+# Only messages that sound like a PC action get the tools (and their long instructions). Everything else is a plain,
+# fast chat — offering 13 tools to a 7B model makes every single answer slower.
+TOOL_WORDS = re.compile(
+    r"\b(open|launch|start|close|quit|exit|find|search|look for|where(?:'s| is| are)|file|files|folder|document|documents|"
+    r"download|downloads|desktop|volume|louder|quieter|mute|unmute|memory|ram|cpu|processor|disk|storage|space|battery|"
+    r"uptime|process|processes|running|task manager|slow|laggy|your (?:own )?(?:code|files?|greeting|source)|"
+    r"change your|improve yourself|modify|edit|apply|undo|revert|proposal|website|web ?site|\.com|\.org|\.net|http|"
+    r"pc|computer|status|notepad|calculator|paint|chrome|edge|browser|settings|explorer)\b", re.I)
+
 SPOKEN_RULE = ("\n- {user} is SPEAKING to you (voice). Answer in 1-3 natural spoken sentences. "
                "No lists, tables, markdown or code unless he asks; say numbers and dates the way people say them.")
 
@@ -51,6 +60,7 @@ class Claire:
         self.history = []
         self.hands = None                       # Phase 4: set by the app (cli / window) when tools are switched on
         self.tools_ok = True
+        self.hot = False                        # the last turn used tools, so a follow-up ("yes, that one") may too
         if not self.store.journal():
             for t, d in FIRST_JOURNAL:
                 self.store.journal_add(t, d)
@@ -79,7 +89,7 @@ class Claire:
         parts.append("\n# Latest journal entries\n" + "\n".join(f"- {r['at'][:10]}: {r['title']}" for r in j))
         parts.append("\n# Rules for this chat\n- Use memories only when relevant; never invent memories."
                      "\n- If asked what you remember, list it honestly.\n- Keep answers short unless asked for detail."
-                     + (HANDS_RULE if self.using_tools() else "")
+                     + (HANDS_RULE if self.wants_tools(user_text) else "")
                      + (SPOKEN_RULE.format(user=user) if spoken else ""))
         return "\n".join(parts)
 
@@ -87,7 +97,7 @@ class Claire:
         msgs = [{"role": "system", "content": self.system_prompt(text, spoken)}]
         msgs += self.history[-self.cfg["recent_turns_kept"] * 2:]
         msgs.append({"role": "user", "content": text})
-        answer = self._ask(msgs, on_token)
+        answer = self._ask(msgs, on_token, self.wants_tools(text))
         self.history += [{"role": "user", "content": text}, {"role": "assistant", "content": answer}]
         self.store.log(self.session, "user", ("🎤 " if spoken else "") + text)
         self.store.log(self.session, "assistant", answer)
@@ -96,9 +106,13 @@ class Claire:
     def using_tools(self):
         return bool(self.hands and self.hands.enabled and self.tools_ok and hasattr(self.brain, "chat_tools"))
 
-    def _ask(self, msgs, on_token):
-        """The brain's answer; with hands on, she may call tools (up to 4 rounds) before answering."""
-        if not self.using_tools():
+    def wants_tools(self, text):
+        return self.using_tools() and (self.hot or bool(TOOL_WORDS.search(text or "")))
+
+    def _ask(self, msgs, on_token, tools=False):
+        """The brain's answer; with hands on and a PC-sounding request, she may call tools (up to 4 rounds)."""
+        self.hot = False
+        if not tools:
             return self.brain.chat(msgs, stream=True, on_token=on_token)
         specs, text = self.hands.specs(), ""
         for _ in range(4):
@@ -109,6 +123,7 @@ class Claire:
                 return self.brain.chat(msgs, stream=True, on_token=on_token)
             if not calls:
                 return text
+            self.hot = True
             msgs.append({"role": "assistant", "content": text,
                          "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls]})
             for c in calls[:3]:

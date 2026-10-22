@@ -120,8 +120,16 @@ class Player:
             except Exception:
                 pass
 
+    LEAD, TAIL = 0.10, 0.45          # seconds of silence around every sentence
+
     def pcm(self, samples, rate):
+        """Plays a sentence. Silence is added before and after: sound cards (especially Bluetooth) report 'finished'
+        while the last ~0.3 s is still in their buffer, which used to cut off the final word."""
         self._stop.clear()
+        import numpy as np
+        samples = np.asarray(samples)
+        pad = lambda secs: np.zeros(int(rate * secs), dtype=samples.dtype)       # noqa: E731
+        samples = np.concatenate([pad(self.LEAD), samples, pad(self.TAIL)])
         try:
             import sounddevice as sd
             sd.play(samples, rate)
@@ -423,23 +431,34 @@ class Speaker:
         self.engine = engine
         self.q, self.aq = queue.Queue(), queue.Queue(maxsize=3)
         self.error, self.gen = None, 0
+        self.on_start = None             # called with the sentence just as she begins to say it (the window shows it then)
         self.pipelined = hasattr(engine, "render") and hasattr(engine, "play")
         threading.Thread(target=self._render_loop, daemon=True).start()
         if self.pipelined:
             threading.Thread(target=self._play_loop, daemon=True).start()
 
+    def _started(self, gen, shown):
+        cb = self.on_start
+        if cb and shown and gen == self.gen:
+            try:
+                cb(shown)
+            except Exception:
+                pass
+
     def _render_loop(self):
         while True:
-            gen, text = self.q.get()
+            gen, text, shown = self.q.get()
             try:
                 if gen != self.gen:
                     continue
                 if not self.pipelined:
-                    self.engine.say(text)
+                    self._started(gen, shown)
+                    if text:
+                        self.engine.say(text)
                     continue
-                audio = self.engine.render(text)
+                audio = self.engine.render(text) if text else None
                 if gen == self.gen:
-                    self.aq.put((gen, audio))
+                    self.aq.put((gen, audio, shown))
                 else:
                     self._discard(audio)
             except Exception as e:
@@ -449,10 +468,12 @@ class Speaker:
 
     def _play_loop(self):
         while True:
-            gen, audio = self.aq.get()
+            gen, audio, shown = self.aq.get()
             try:
                 if gen == self.gen:
-                    self.engine.play(audio)
+                    self._started(gen, shown)
+                    if audio is not None:
+                        self.engine.play(audio)
                 else:
                     self._discard(audio)
             except Exception as e:
@@ -461,13 +482,14 @@ class Speaker:
                 self.aq.task_done()
 
     def _discard(self, audio):
-        if hasattr(self.engine, "discard"):
+        if audio is not None and hasattr(self.engine, "discard"):
             self.engine.discard(audio)
 
-    def say(self, text):
+    def say(self, text, shown=None):
+        """Queue a sentence. `shown` (the original wording) goes to on_start when she begins saying it."""
         t = clean_for_speech(text)
-        if t:
-            self.q.put((self.gen, t))
+        if t or shown:
+            self.q.put((self.gen, t, shown))
 
     @property
     def speaking(self):

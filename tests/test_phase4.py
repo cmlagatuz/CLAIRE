@@ -317,8 +317,29 @@ class Thinking(unittest.TestCase):
 
     def test_endless_tool_loops_are_cut(self):
         c, _, _ = self.claire(ToolBrain([[{"name": "system_status", "arguments": {}}]] * 10))
-        self.assertIn("couldn't finish", c.reply("loop"))
+        self.assertIn("couldn't finish", c.reply("check my pc memory loop"))
         self.assertEqual(len(c.brain.rounds), 4)
+
+    def test_small_talk_is_a_plain_fast_chat_without_tools(self):
+        c, h, _ = self.claire(ToolBrain([[{"name": "system_status", "arguments": {}}]], "I'm well, thanks."))
+        for text in ("how are you today", "tell me a joke", "what do you think of jazz"):
+            self.assertEqual(c.reply(text), "I'm well, thanks.")
+        self.assertEqual(c.brain.rounds, [])                       # chat_tools was never called
+        self.assertNotIn("You have hands", c.brain.calls[-1][0]["content"])
+
+    def test_pc_requests_and_their_follow_ups_get_tools(self):
+        c, h, _ = self.claire(ToolBrain([[{"name": "open_app", "arguments": {"name": "notepad"}}]], "Asked."))
+        c.reply("please open notepad")
+        self.assertEqual(len(c.brain.rounds), 2)
+        self.assertTrue(c.hot)
+        c.brain.script.append([{"name": "system_status", "arguments": {}}])
+        c.reply("yes that one")                                   # no keyword, but it follows a tool turn
+        self.assertEqual(len(c.brain.rounds), 4)
+        c.reply("thanks")                                         # still a follow-up; no tool is called, so the window closes
+        self.assertEqual(len(c.brain.rounds), 5)
+        self.assertFalse(c.hot)
+        c.reply("tell me a story")                                # back to the plain, fast chat
+        self.assertEqual(len(c.brain.rounds), 5)
 
     def test_no_hands_means_plain_chat(self):
         c = make(tempfile.mkdtemp(), ToolBrain([]))
@@ -330,9 +351,9 @@ class Thinking(unittest.TestCase):
             def chat_tools(self, *a, **k):
                 raise ToolsUnsupported("nope")
         c, _, _ = self.claire(Plain("Plain answer."))
-        self.assertEqual(c.reply("hi"), "Plain answer.")
+        self.assertEqual(c.reply("open my files"), "Plain answer.")
         self.assertFalse(c.tools_ok)
-        self.assertEqual(c.reply("again"), "Plain answer.")
+        self.assertEqual(c.reply("open again"), "Plain answer.")
 
 
 class FakeOllama(http.server.BaseHTTPRequestHandler):

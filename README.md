@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.6.0 · Phase 4 (Hands)
+# C.L.A.I.R.E. — v2.6.1 · Phase 4 (Hands)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ![C.L.A.I.R.E.'s window: a living network of light, with a question card asking permission](docs/images/hands_ask.png)
@@ -157,6 +157,10 @@ Hands: “how's my PC”, “find …”, “open …”, “volume up” — sh
 Memory commands from Phase 1: `/remember`, `/remember!`, `/forget`, `/memories`, `/journal`, `/new`, `/model`, `/status`, `/quit`.
 
 ## Troubleshooting
+- **Her last word is cut off / the text runs ahead of her voice / she is slow to answer** (fixed in v2.6.1): a short silence is now
+  added after every sentence so sound cards can finish the last word; in the window each sentence appears when she *starts saying it*
+  (typing-only answers still stream live); and her tools are only offered when you ask for something on the PC, so ordinary chat is as
+  fast as before Phase 4. If she is still slow, her brain is the limit: try `"model": "qwen2.5:3b"` in settings.json (smaller, faster).
 - **Still the robotic voice?** `/status` shows why the natural voice was skipped (e.g. not installed, files missing).
 - **Install errors:** use Python 3.12. Newer versions may not have the voice packages yet.
 - **Download blocked:** the Studio prints two links; download them in your browser into the `voices` folder.

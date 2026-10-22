@@ -47,7 +47,7 @@ class Brain:
 
     def chat(self, messages, stream=True, on_token=None, temperature=None, json_mode=False):
         """Returns the full reply text. Calls on_token(piece) while streaming."""
-        payload = {"model": self.model, "messages": messages, "stream": stream,
+        payload = {"model": self.model, "messages": messages, "stream": stream, "keep_alive": "30m",
                    "options": {"temperature": self.temperature if temperature is None else temperature,
                                "num_ctx": self.ctx}}
         if json_mode:
@@ -73,7 +73,7 @@ class Brain:
     def chat_tools(self, messages, tools, on_token=None, temperature=None):
         """One streamed round with tools offered. Returns (text, calls) where calls is a list of
         {"name": ..., "arguments": {...}}. Raises ToolsUnsupported if the model has no tool support."""
-        payload = {"model": self.model, "messages": messages, "stream": True, "tools": tools,
+        payload = {"model": self.model, "messages": messages, "stream": True, "tools": tools, "keep_alive": "30m",
                    "options": {"temperature": self.temperature if temperature is None else temperature,
                                "num_ctx": self.ctx}}
         try:

@@ -179,26 +179,40 @@ class WebSession:
         signals.activity = "thinking"
         self.hub.publish("claire_start")
 
-        def tok(t):
+        def show(piece):
             if first[0]:
                 first[0] = False
                 signals.activity = "responding"
-            self.hub.publish("token", text=t)
-            if speak:
-                for s in sb.feed(t):
-                    sp.say(s)
+            self.hub.publish("token", text=piece)
+
+        def tok(t):
+            if not speak:
+                return show(t)                          # typing-only: words appear as she writes them
+            for s in sb.feed(t):                        # speaking: each sentence appears when she starts SAYING it
+                sp.say(s, shown=s + " ")
+        self.turn_no = getattr(self, "turn_no", 0) + 1
+        mine = self.turn_no
+        if sp:
+            sp.on_start = show if speak else None
         try:
             c.reply(text, on_token=tok, spoken=spoken)
             if speak:
                 for s in sb.flush():
-                    sp.say(s)
+                    sp.say(s, shown=s)
                 c.milestone("Found my voice", "Phase 2: I can speak, listen, and wake when Carl says “Hey Claire”.")
         except BrainOffline as e:
             self.hub.publish("error", text=str(e))
             if speak:
                 sp.say("I can't reach my brain right now. Please start Ollama.")
         finally:
-            self.hub.publish("claire_end")
+            if speak and sp:                           # the caption may only fade once she has finished SAYING it
+                def done():
+                    sp.wait()
+                    if mine == self.turn_no:
+                        self.hub.publish("claire_end")
+                threading.Thread(target=done, daemon=True).start()
+            else:
+                self.hub.publish("claire_end")
         return True
 
     # ---------------- listening ----------------
