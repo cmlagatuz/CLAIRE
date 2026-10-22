@@ -1,5 +1,7 @@
-# C.L.A.I.R.E. — v2.4.1 · Phase 3 (Face)
+# C.L.A.I.R.E. — v2.5.0 · Phase 4 (Hands)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
+
+![C.L.A.I.R.E.'s window: a living network of light, with a question card asking permission](docs/images/hands_ask.png)
 
 ## Setup
 1. **Python 3.12** (3.10–3.13 work) — https://www.python.org/downloads/ · tick **Add python.exe to PATH**.
@@ -16,7 +18,7 @@ If `.bat` files are blocked, rename the `.bat.txt` copies.
 files, microphone, speakers and Ollama, and says exactly what to do about each ✗. Her voice files can be present while the
 Python package that uses them is not — doctor.bat shows that difference.
 
-## Her window (new)
+## Her window
 Run **window.bat** (or `python -m claire --window`). A window opens with a living network of light — the way she looks while she
 works. It needs nothing new to install and never leaves this PC (it listens on `127.0.0.1` only).
 
@@ -27,6 +29,10 @@ works. It needs nothing new to install and never leaves this PC (it listens on `
 | **Thinking** | signals race hub to hub, the whole network flickers (violet) |
 | **Speaking** | ripples spread outward in time with *her* voice's loudness (warm) |
 
+| Ready | Listening | Thinking | Speaking |
+|---|---|---|---|
+| ![Ready](docs/images/orb_idle.png) | ![Listening](docs/images/orb_listening.png) | ![Thinking](docs/images/orb_thinking.png) | ![Speaking](docs/images/orb_speaking.png) |
+
 In the window: type and press Enter · **Talk** (or Ctrl+Space) for push-to-talk · **Hands-free** for “Hey Claire” ·
 **Voice: auto/on/off** · **Stop** (or Esc). With the online Edge voice she can't be measured, so the network animates by itself while she speaks.
 **Choosing her voice.** Say or type **“change your voice”**: she names her voices (American: Heart, Bella, Nicole…; British: Emma,
@@ -35,12 +41,62 @@ In hands-free mode she listens for your answer without “Hey Claire” again. T
 with **Try** (hear it, then she goes back to her own voice), **Use** (keep it) and a speed slider. She also obeys “speak slower” any time.
 (Needs the natural voices from setup_voice.bat; with the basic Windows voice she'll tell you.)
 
+![Her window in light theme](docs/images/orb_light.png)
+
 **Memory** button (top right): see everything she remembers (★ = core facts about you), add a memory, make it core, or
 **Forget** one; the **Journal** tab shows her story and lets you add a note. **Theme**: auto (follows Windows) / dark / light.
+
+| Memories | Journal | Voice |
+|---|---|---|
+| ![Memories](docs/images/panel_memories.png) | ![Journal](docs/images/panel_journal.png) | ![Voice](docs/images/panel_voice.png) |
 
 **Anywhere on your PC:** press **Ctrl+Alt+C** and she starts listening (her window reopens if you closed it). For a tray icon
 (Open · Talk · Quit) run `pip install pystray pillow` once; it is optional.
 Settings in settings.json: `"ui": {"port": 8765, "open": true, "hotkey": "ctrl+alt+c", "tray": true}` — set `"hotkey": ""` to turn the hotkey off.
+
+## Her hands (new in v2.5) — she acts, but only with your “yes”
+Ask in plain words, by voice or typing:
+
+| You say | What she does | Asks first? |
+|---|---|---|
+| “How's my PC doing?” / “how much disk space is left?” | Reads processor, memory, disks, battery, uptime | No — only reads |
+| “Find my visa report” | Searches file **names** in Documents, Downloads, Desktop and lists the matches | No — only reads |
+| “Open notepad” (calculator, paint, file explorer, settings, edge, chrome, task manager) | Starts that app | **Yes** |
+| “Open that file” / “open example.com” | Opens the file or folder / the website in your normal program | **Yes** |
+| “Turn the volume up / down”, “mute” | Presses the volume key | **Yes** |
+
+![She asks "Open Notepad?" with Yes / No / Always, and waits](docs/images/hands_ask.png)
+
+When something needs your OK, a card appears above the text box (and she says it aloud). Answer by **saying or typing**
+*yes* / *no* / *always* (hands-free mode listens for your answer without “Hey Claire”), or tap **Yes · No · Always**.
+**Always** means “don't ask me about this kind of action again” and is saved in `settings.json` (`tools.always`).
+An unanswered question is dropped after 5 minutes. She only says an action happened when it really did.
+
+![After you say yes: "Opened notepad."](docs/images/hands_done.png)
+
+**The Actions tab** (Memory button → *Actions*) shows everything she asked, did, was refused or you declined — the same record
+is kept in `data\actions.jsonl`.
+
+| Dark | Light |
+|---|---|
+| ![Actions tab, dark](docs/images/panel_actions.png) | ![Actions tab, light](docs/images/panel_actions_light.png) |
+
+**What she will never do:** delete, send, install, or run commands — those tools simply don't exist. Other rules, all covered by tests:
+- Files only inside the folders in `tools.folders` (default Documents, Downloads, Desktop); `..` tricks, shortcut/link
+  escapes and network paths (`\\server\share`) are refused.
+- Programs and files that can run code (`.exe .bat .ps1 .lnk .js .vbs .docm …`) are never opened — she tells you where they are.
+- Websites: only `http`/`https`, and never an address with a hidden login (`google.com@evil.com`).
+- Apps: only the ones on her list (`tools.apps`). Not on the list → “I only open apps on my list”. No terminals by default.
+- If her model can't use tools she simply chats as before (the quick answers above still work with `qwen2.5:7b`).
+
+Settings in settings.json:
+```json
+"tools": {"enabled": true,
+          "folders": ["~/Documents", "~/Downloads", "~/Desktop", "D:/Work"],
+          "apps": {"notepad": "notepad", "calculator": "calc"},
+          "always": [], "volume_step": 10}
+```
+Set `"enabled": false` to switch her hands off. doctor.bat shows which folders she can search.
 
 ## Her voice
 | Engine | Quality | Where it runs | Notes |
@@ -67,6 +123,8 @@ or a blend like `af_heart:0.6+bf_emma:0.4`.
 | `/voice list` · `/voice try <name>` · `/voice use <name>` | Browse, audition, keep a voice |
 | `/voice speed 0.95` · `/voice engine kokoro\|edge\|windows` | Pace · engine |
 
+Hands: “how's my PC”, “find …”, “open …”, “volume up” — she asks before opening or changing anything (see *Her hands*).
+
 Memory commands from Phase 1: `/remember`, `/remember!`, `/forget`, `/memories`, `/journal`, `/new`, `/model`, `/status`, `/quit`.
 
 ## Troubleshooting
@@ -74,5 +132,9 @@ Memory commands from Phase 1: `/remember`, `/remember!`, `/forget`, `/memories`,
 - **Install errors:** use Python 3.12. Newer versions may not have the voice packages yet.
 - **Download blocked:** the Studio prints two links; download them in your browser into the `voices` folder.
 
+## Pictures
+The screenshots in this file are made by `python docs/make_screenshots.py` (needs `pip install playwright`); they use a
+pretend brain, voice and PC, so nothing is opened or changed while they are taken.
+
 ## Privacy
-Speech recognition and the Kokoro voice run on this PC. Audio isn't saved; only message text is kept in `data\claire.db`.
+Speech recognition and the Kokoro voice run on this PC. Audio isn't saved; only message text is kept in `data\claire.db`. Actions are logged in `data\actions.jsonl`. File search reads names only, never contents.

@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import __version__, doctor
+from . import __version__, config, doctor, hands as hands_mod
 from .brain import BrainOffline
 from .cli import HUSH, STOP_LISTENING, VOICE_INTENTS, App
 from .signals import signals
@@ -66,6 +66,9 @@ class WebSession:
         self.info = {"user": self.app.user, "version": __version__, "ready": False}
         self.chooser = VoiceChooser(self.app.vk, self._say, self.app.user, self.app.c.milestone)
         self.vc = self.chooser.ctl
+        self.hands = self.app.c.hands or hands_mod.attach(self.app.c, config.save_setting)
+        if self.hands:
+            self.hands.on_change = lambda: self.hub.publish("pending", items=self.hands.pending())
 
     # ---------------- state the window draws ----------------
     def frame(self):
@@ -89,7 +92,7 @@ class WebSession:
         vk = self.app.vk
         st = vk.status()
         return dict(self.info, mouth=st["mouth"], ears=st["ears"], speak=vk.mode,
-                    model=self.app.c.cfg["model"])
+                    model=self.app.c.cfg["model"], pending=self.hands.pending() if self.hands else [])
 
     # ---------------- start-up ----------------
     def warm_up(self):
@@ -151,6 +154,11 @@ class WebSession:
                 return True
         if self.chooser.handle(text):
             return True
+        if self.hands and self.hands.pending():
+            ans = self.hands.answer(text)
+            if ans:
+                self._say(ans)
+                return True
         if spoken and STOP_LISTENING.search(text):
             self._say(f"Okay {a.user}, back to typing.")
             return False
@@ -218,7 +226,7 @@ class WebSession:
 
     def _follow_up(self):
         """She asked you something (e.g. which voice) and is waiting for the answer — no wake word needed."""
-        if self.chooser.pending:
+        if self.chooser.pending or (self.hands and self.hands.pending()):
             signals.activity = "listening"
             return True
         return False
@@ -362,6 +370,23 @@ class WebSession:
         self.hub.publish("status", **self.status())
         return True
 
+    # ---------------- hands ----------------
+    def actions(self):
+        h = self.hands
+        return {"enabled": bool(h and h.enabled), "pending": h.pending() if h else [],
+                "history": h.history(30) if h else [], "always": sorted(h.always) if h else [],
+                "folders": [str(p) for p in h.allowed()] if h else []}
+
+    def decide(self, pid, yes, always=False):
+        """The Yes / No buttons on her question card."""
+        h = self.hands
+        if not h:
+            return False
+        res = h.approve(pid, always) if yes else h.deny(pid)
+        self._say(res["text"] + (" I won't ask about that again." if res.get("always") else ""))
+        self.hub.publish("actions", **self.actions())
+        return res["status"] in ("done", "denied")
+
     def close(self):
         if self.hf_stop:
             self.hf_stop.set()
@@ -443,6 +468,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"speed": s.voice_speed(float(body.get("value")))})
             except (TypeError, ValueError):
                 return self._send(400, {"error": "bad speed"})
+        if path == "/api/actions":
+            return self._send(200, s.actions())
+        if path == "/api/approve":
+            try:
+                return self._send(200, {"ok": s.decide(int(body.get("id")), bool(body.get("yes")), bool(body.get("always")))})
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "bad id"})
         if path == "/api/memories":
             return self._send(200, {"items": s.memories()})
         if path == "/api/remember":

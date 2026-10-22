@@ -27,7 +27,15 @@ Rules for every phase: **local first** · **ask before acting** · **tests must 
 | 3.4 | Light/dark theme (auto / dark / light) | ✅ v2.3 |
 | 3.6 | Choose her voice by talking (“change your voice”) + Voice tab with Try / Use / speed | ✅ v2.4 |
 
-## Phase 4 · Hands — tools on the PC (ask before acting)
+## Phase 4 · Hands — tools on the PC (ask before acting)  ✅ complete (v2.5.0)
+| # | Milestone | Status |
+|---|---|---|
+| 4.1 | Tool calling through Ollama (falls back to plain chat if the model has no tool support) | ✅ v2.5 |
+| 4.2 | Safe, read-only tools: PC status (CPU · memory · disks · battery · uptime), file search in Documents / Downloads / Desktop | ✅ v2.5 |
+| 4.3 | Ask-first tools: open a file/folder, open an app from her list, open a website, volume up/down/mute | ✅ v2.5 |
+| 4.4 | Approval: spoken or typed yes / no / always, or buttons on a question card in her window | ✅ v2.5 |
+| 4.5 | Audit log (`data\actions.jsonl`) + **Actions** tab in the window | ✅ v2.5 |
+| 4.6 | Safety rules, tested: no delete/send/run-command tools, allowed folders only, no `..`/link/network-path escapes, programs and macro files never opened, http(s) links only (no hidden logins), apps only from her list | ✅ v2.5 |
 ## Phase 5 · Knowledge — your documents, with sources
 ## Phase 6 · Growth — memory review, evaluation set, optional fine-tune
 ## Phase 7 · Autonomy — briefings, schedules, proactive reminders

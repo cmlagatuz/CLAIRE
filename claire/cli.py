@@ -5,7 +5,7 @@ import re
 import sys
 import threading
 
-from . import __version__, config
+from . import __version__, config, hands
 from .brain import BrainOffline
 from .core import Claire
 from .voice import EDGE_VOICES, KOKORO_VOICES, SentenceBuffer, VoiceKit
@@ -22,6 +22,8 @@ Voice
   /voice speed 0.95    slower/faster · /voice engine kokoro | edge | windows
   /voice studio        open the Voice Studio · /voice test · /mute · /unmute · /stop
   /mic                 list microphones · /mic <number> to choose
+Hands (she always asks before opening or changing anything — answer yes / no / always)
+  "how's my PC" · "find my visa report" · "open notepad" · "open example.com" · "turn the volume up"
 Memory
   /remember <fact>     save something   (/remember! <fact> = core fact about you)
   /forget <id|words>   forget a memory · /memories  list them
@@ -41,6 +43,7 @@ HUSH = re.compile(r"^(stop|cancel|shut up|enough|never ?mind)\W*$", re.I)
 class App:
     def __init__(self):
         self.c = Claire()
+        hands.attach(self.c, config.save_setting)
         self.vk = VoiceKit(self.c.cfg, config.ROOT)
         self.user = self.c.cfg["user_name"]
 
@@ -76,6 +79,12 @@ class App:
                 return True
         if self.chooser.handle(text):
             return True
+        h = self.c.hands
+        if h and h.pending():
+            ans = h.answer(text)
+            if ans:
+                self.say_line(ans)
+                return True
         if spoken and STOP_LISTENING.search(text):
             self.say_line(f"Okay {self.user}, back to typing.")
             return False
@@ -93,6 +102,8 @@ class App:
         try:
             self.c.reply(text, on_token=tok, spoken=spoken)
             print()
+            if h and h.pending():
+                print(f"{G}(waiting for you: {h.pending()[-1]['what']} — say or type yes / no / always){D}")
             if speak:
                 for s in sb.flush():
                     sp.say(s)

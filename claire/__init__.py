@@ -1,2 +1,2 @@
-"""C.L.A.I.R.E. — personal assistant core (Phase 3 · Face). Lagatuz Labs."""
-__version__ = "2.4.1"
+"""C.L.A.I.R.E. — personal assistant core (Phase 4 · Hands). Lagatuz Labs."""
+__version__ = "2.5.0"

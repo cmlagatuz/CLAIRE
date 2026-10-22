@@ -14,6 +14,14 @@ DEFAULTS = {
     "auto_memory": True,
     "data_dir": "data",
     "ui": {"port": 8765, "open": True, "hotkey": "ctrl+alt+c", "tray": True},    # Phase 3: her window
+    "tools": {                             # Phase 4: her hands — she always asks before acting
+        "enabled": True,
+        "folders": ["~/Documents", "~/Downloads", "~/Desktop"],
+        "apps": {"notepad": "notepad", "calculator": "calc", "paint": "mspaint", "file explorer": "explorer",
+                 "settings": "ms-settings:", "edge": "msedge", "chrome": "chrome", "task manager": "taskmgr"},
+        "always": [],                      # tools you told her never to ask about again
+        "volume_step": 10,
+    },
     "voice": {
         "enabled": True,
         "speak": "auto",

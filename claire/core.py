@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import config
-from .brain import Brain, BrainOffline
+from .brain import Brain, BrainOffline, ToolsUnsupported
 from .store import Store
 
 FIRST_JOURNAL = [
@@ -28,6 +28,12 @@ Read the conversation and return JSON: {{"summary": "...", "facts": [{{"text": "
 Conversation:
 {convo}"""
 
+HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files/apps/websites and change the volume. "
+              "Use a tool only when the user clearly asks for that action. Opening and volume actions ask the user "
+              "first; when a tool says it is waiting for a yes, tell him what you asked in one short sentence and stop. "
+              "You cannot delete, send, install or run commands; if asked, say you can't do that. "
+              "Never claim an action happened unless a tool result says it did.")
+
 SPOKEN_RULE = ("\n- {user} is SPEAKING to you (voice). Answer in 1-3 natural spoken sentences. "
                "No lists, tables, markdown or code unless he asks; say numbers and dates the way people say them.")
 
@@ -40,6 +46,8 @@ class Claire:
         self.store = store or Store(str(Path(self.cfg["data_dir"]) / "claire.db"))
         self.identity = config.identity_text()
         self.history = []
+        self.hands = None                       # Phase 4: set by the app (cli / window) when tools are switched on
+        self.tools_ok = True
         if not self.store.journal():
             for t, d in FIRST_JOURNAL:
                 self.store.journal_add(t, d)
@@ -68,6 +76,7 @@ class Claire:
         parts.append("\n# Latest journal entries\n" + "\n".join(f"- {r['at'][:10]}: {r['title']}" for r in j))
         parts.append("\n# Rules for this chat\n- Use memories only when relevant; never invent memories."
                      "\n- If asked what you remember, list it honestly.\n- Keep answers short unless asked for detail."
+                     + (HANDS_RULE if self.using_tools() else "")
                      + (SPOKEN_RULE.format(user=user) if spoken else ""))
         return "\n".join(parts)
 
@@ -75,11 +84,34 @@ class Claire:
         msgs = [{"role": "system", "content": self.system_prompt(text, spoken)}]
         msgs += self.history[-self.cfg["recent_turns_kept"] * 2:]
         msgs.append({"role": "user", "content": text})
-        answer = self.brain.chat(msgs, stream=True, on_token=on_token)
+        answer = self._ask(msgs, on_token)
         self.history += [{"role": "user", "content": text}, {"role": "assistant", "content": answer}]
         self.store.log(self.session, "user", ("🎤 " if spoken else "") + text)
         self.store.log(self.session, "assistant", answer)
         return answer
+
+    def using_tools(self):
+        return bool(self.hands and self.hands.enabled and self.tools_ok and hasattr(self.brain, "chat_tools"))
+
+    def _ask(self, msgs, on_token):
+        """The brain's answer; with hands on, she may call tools (up to 4 rounds) before answering."""
+        if not self.using_tools():
+            return self.brain.chat(msgs, stream=True, on_token=on_token)
+        specs, text = self.hands.specs(), ""
+        for _ in range(4):
+            try:
+                text, calls = self.brain.chat_tools(msgs, specs, on_token=on_token)
+            except ToolsUnsupported:
+                self.tools_ok = False
+                return self.brain.chat(msgs, stream=True, on_token=on_token)
+            if not calls:
+                return text
+            msgs.append({"role": "assistant", "content": text,
+                         "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}} for c in calls]})
+            for c in calls[:3]:
+                res = self.hands.call(c["name"], c["arguments"])
+                msgs.append({"role": "tool", "tool_name": c["name"], "content": res["text"]})
+        return text or "I tried, but I couldn't finish that."
 
     def reflect(self, session_id=None):
         sid = session_id or self.session

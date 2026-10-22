@@ -8,6 +8,10 @@ class BrainOffline(Exception):
     pass
 
 
+class ToolsUnsupported(Exception):
+    """This model can't use tools; she carries on as a plain chat."""
+
+
 class Brain:
     def __init__(self, url, model, temperature=0.6, context_tokens=8192, timeout=300):
         self.url = url.rstrip("/")
@@ -65,3 +69,41 @@ class Brain:
                 if part.get("done"):
                     break
         return "".join(out)
+
+    def chat_tools(self, messages, tools, on_token=None, temperature=None):
+        """One streamed round with tools offered. Returns (text, calls) where calls is a list of
+        {"name": ..., "arguments": {...}}. Raises ToolsUnsupported if the model has no tool support."""
+        payload = {"model": self.model, "messages": messages, "stream": True, "tools": tools,
+                   "options": {"temperature": self.temperature if temperature is None else temperature,
+                               "num_ctx": self.ctx}}
+        try:
+            resp = self._post("/api/chat", payload)
+        except BrainOffline as e:
+            if "does not support tools" in str(e):
+                raise ToolsUnsupported(str(e))
+            raise
+        out, calls = [], []
+        with resp:
+            for line in resp:
+                if not line.strip():
+                    continue
+                part = json.loads(line)
+                msg = part.get("message", {})
+                piece = msg.get("content", "")
+                if piece:
+                    out.append(piece)
+                    if on_token:
+                        on_token(piece)
+                for tc in msg.get("tool_calls") or []:
+                    fn = tc.get("function", {})
+                    args = fn.get("arguments", {})
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except ValueError:
+                            args = {}
+                    if fn.get("name"):
+                        calls.append({"name": fn["name"], "arguments": args if isinstance(args, dict) else {}})
+                if part.get("done"):
+                    break
+        return "".join(out), calls

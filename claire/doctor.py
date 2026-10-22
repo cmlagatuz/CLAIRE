@@ -87,6 +87,15 @@ def checks(cfg=None):
             rows.append((FAIL, "Brain (Ollama)", "not running — start the Ollama app"))
     except Exception as e:
         rows.append((WARN, "Brain (Ollama)", f"couldn't check: {e}"))
+    t = cfg.get("tools", {})
+    if not t.get("enabled", True):
+        rows.append((WARN, "Her hands (tools)", "switched off in settings.json (tools → enabled)"))
+    else:
+        from .hands import files
+        ok = files.roots(t.get("folders"))
+        rows.append((OK if ok else WARN, "Her hands (tools)",
+                     "file search in: " + ", ".join(str(p) for p in ok) if ok else
+                     "none of tools.folders exist — she can still open apps and websites, but can't search files"))
     return rows
 
 

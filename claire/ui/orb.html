@@ -48,6 +48,15 @@
   .note { font-size: 13px; color: var(--dim); }
   .note.err { color: var(--err); }
 
+  .ask { pointer-events: auto; width: min(720px, 100%); display: none; align-items: center; gap: 10px; padding: 10px 14px;
+         background: var(--glass); border: 1px solid var(--line); border-left: 3px solid #a58cff; border-radius: 16px;
+         backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .ask.on { display: flex; }
+  .ask .q { flex: 1; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
+  .ask .q small { display: block; color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .ask .yes { border-color: #a58cff; }
+  .ev { font-size: 12px; color: var(--dim); }
+  .ev.bad { color: var(--err); }
   .dock { pointer-events: auto; width: min(720px, 100%); display: flex; gap: 8px; padding: 8px;
           background: var(--glass); border: 1px solid var(--line); border-radius: 18px;
           backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
@@ -111,6 +120,7 @@
       <button type="button" id="tabMem" aria-pressed="true">Memories</button>
       <button type="button" id="tabJour" aria-pressed="false">Journal</button>
       <button type="button" id="tabVoice" aria-pressed="false">Voice</button>
+      <button type="button" id="tabHands" aria-pressed="false">Actions</button>
     </div>
     <button type="button" id="panelClose" aria-label="Close panel">✕</button>
   </header>
@@ -132,6 +142,12 @@
     <div class="you" id="you"></div>
     <div class="answer" id="answer"></div>
     <div class="note" id="note"></div>
+  </div>
+  <div class="ask" id="ask" role="alertdialog" aria-live="assertive" aria-label="Claire is asking permission">
+    <div class="q" id="askQ"></div>
+    <button type="button" class="yes" id="askYes">Yes</button>
+    <button type="button" id="askNo">No</button>
+    <button type="button" id="askAlways" title="Do this kind of thing without asking again">Always</button>
   </div>
   <form class="dock" id="form" autocomplete="off">
     <input id="text" type="text" placeholder="Type to Claire…" aria-label="Message to Claire" maxlength="4000">
@@ -390,7 +406,7 @@ function setNote(text, err) { const n = $("note"); n.textContent = text; n.class
 const es = new EventSource("/events?t=" + encodeURIComponent(TOKEN));
 es.addEventListener("frame", ev => { const d = JSON.parse(ev.data); net.l = d.l; net.m = d.m; net.hf = d.hf; setState(d.s);
   $("hf").setAttribute("aria-pressed", d.hf ? "true" : "false"); });
-es.addEventListener("status", ev => { const d = JSON.parse(ev.data); speakMode = d.speak || speakMode;
+es.addEventListener("status", ev => { const d = JSON.parse(ev.data); if (d.pending) showAsk(d.pending); speakMode = d.speak || speakMode;
   if (panel.classList.contains("open") && tab === "voice" && !$("speed").matches(":active")) refresh();
   $("mode").textContent = "Voice: " + speakMode;
   $("meta").textContent = [d.model, d.mouth && d.mouth.split("   [")[0]].filter(Boolean).join(" · "); });
@@ -441,10 +457,10 @@ function setPanel(open) {
 }
 function setTab(t) {
   tab = t; $("tabMem").setAttribute("aria-pressed", t === "mem"); $("tabJour").setAttribute("aria-pressed", t === "jour");
-  $("tabVoice").setAttribute("aria-pressed", t === "voice");
+  $("tabVoice").setAttribute("aria-pressed", t === "voice"); $("tabHands").setAttribute("aria-pressed", t === "hands");
   $("addText").placeholder = t === "mem" ? "Tell me something to remember…" : "Add a note to my journal…";
   $("coreLbl").style.display = t === "mem" ? "" : "none";
-  $("addForm").hidden = t === "voice"; $("speedBox").hidden = t !== "voice"; refresh();
+  $("addForm").hidden = t === "voice" || t === "hands"; $("speedBox").hidden = t !== "voice"; refresh();
 }
 let seq = 0;      // every refresh takes a ticket; an answer that arrives after a newer refresh started is dropped
 async function refreshVoices(my) {
@@ -465,9 +481,40 @@ async function refreshVoices(my) {
     acts.append(tryB, useB); row.append(body, acts); box.append(row);
   }
 }
+const WORDS = { asked: "asked you", done: "done", approved: "you said yes", denied: "you said no", refused: "refused",
+                failed: "failed", expired: "no answer" };
+async function refreshActions(my) {
+  const box = $("list"), r = await api("/api/actions");
+  if (my !== seq) return;
+  box.replaceChildren();
+  if (!r.enabled) { box.append(el("div", "empty", "My hands are switched off (settings.json → tools → enabled).")); return; }
+  if (r.always.length) box.append(el("div", "empty", "I don't ask first for: " + r.always.join(", ")));
+  if (!r.history.length) box.append(el("div", "empty", "Nothing yet. Ask me to open an app, find a file, or check the PC."));
+  for (const h of r.history) {
+    const row = el("div", "item"), body = el("div", "txt");
+    body.append(el("div", "ev" + (h.event === "refused" || h.event === "failed" ? " bad" : ""), (WORDS[h.event] || h.event) + " · " + h.tool),
+                el("div", "", h.text || ""), el("div", "sub", h.at));
+    row.append(body); box.append(row);
+  }
+}
+let asking = null;
+function showAsk(items) {
+  asking = items && items.length ? items[items.length - 1] : null;
+  $("ask").classList.toggle("on", !!asking);
+  if (asking) { const q = $("askQ"); q.replaceChildren(document.createTextNode(asking.what + "?"), el("small", "", "Say yes or no, or tap a button.")); }
+  if (panel.classList.contains("open") && tab === "hands") refresh();
+}
+const decide = (yes, always) => { if (asking) { const id = asking.id; asking = null; $("ask").classList.remove("on"); api("/api/approve", { id, yes, always }); } };
+$("askYes").addEventListener("click", () => decide(true, false));
+$("askNo").addEventListener("click", () => decide(false, false));
+$("askAlways").addEventListener("click", () => decide(true, true));
+$("tabHands").addEventListener("click", () => setTab("hands"));
+es.addEventListener("pending", ev => showAsk(JSON.parse(ev.data).items));
+es.addEventListener("actions", ev => { const d = JSON.parse(ev.data); showAsk(d.pending); });
 async function refresh() {
   const my = ++seq, t = tab;                  // draw with the tab this request was made for, never whatever is current later
   if (t === "voice") return refreshVoices(my);
+  if (t === "hands") return refreshActions(my);
   const box = $("list"), r = await api(t === "mem" ? "/api/memories" : "/api/journal"), items = r.items || [];
   if (my !== seq) return;
   box.replaceChildren();
