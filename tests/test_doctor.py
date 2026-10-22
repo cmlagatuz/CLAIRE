@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from claire import config, doctor                                   # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-BATS = ["make_env", "setup_claire", "setup_voice", "start_claire", "window", "studio", "doctor"]
+BATS = ["make_env", "setup_claire", "setup_voice", "start_claire", "window", "studio", "doctor", "link"]
 
 
 def cfg_offline():
@@ -98,7 +98,7 @@ class Launchers(unittest.TestCase):
             self.assertIn("call make_env.bat", self.read(f"{n}.bat").decode())
 
     def test_every_launcher_prefers_her_own_python(self):
-        for n in ("start_claire", "window", "studio", "doctor"):
+        for n in ("start_claire", "window", "studio", "doctor", "link"):
             text = self.read(f"{n}.bat").decode()
             self.assertIn('if exist ".venv\\Scripts\\python.exe" set "PY=.venv\\Scripts\\python.exe"', text, n)
             self.assertIn('"%PY%" -m claire', text, n)

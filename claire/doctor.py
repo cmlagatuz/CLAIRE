@@ -92,9 +92,9 @@ def checks(cfg=None):
     if not cc["enabled"]:
         rows.append((WARN, "Companion (reminders, breaks, health)", "switched off in settings.json (companion → enabled)"))
     elif cc["link"]["enabled"] and len(cc["link"]["token"]) >= 16:
-        rows.append((OK, "Phone link", f"on, port {cc['link']['port']} — run  python -m claire --link  to see the address"))
+        rows.append((OK, "Phone link", f"on, port {cc['link']['port']} — run link.bat to see the address"))
     else:
-        rows.append((WARN, "Phone link", "off — reminders, notes and PC break reminders work; run  python -m claire --link  to connect your phone/watch"))
+        rows.append((WARN, "Phone link", "off — reminders, notes and PC break reminders work; run link.bat to connect your phone/watch"))
     t = cfg.get("tools", {})
     if not t.get("enabled", True):
         rows.append((WARN, "Her hands (tools)", "switched off in settings.json (tools → enabled)"))
