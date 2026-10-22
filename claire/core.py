@@ -31,6 +31,9 @@ Conversation:
 HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files/apps/websites and change the volume. "
               "Use a tool only when the user clearly asks for that action. Opening and volume actions ask the user "
               "first; when a tool says it is waiting for a yes, tell him what you asked in one short sentence and stop. "
+              "You can look at what is running (top_processes) and ask programs to close to free memory. "
+              "You can read your own code and prepare a tested change to it (propose_change); it only takes effect "
+              "after the user approves apply_change. You cannot edit your safety rules. "
               "You cannot delete, send, install or run commands; if asked, say you can't do that. "
               "Never claim an action happened unless a tool result says it did.")
 

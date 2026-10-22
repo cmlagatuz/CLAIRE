@@ -24,6 +24,9 @@ def build():
     h, pc, docs = setup_hands()
     (docs / "Visa report - Q3.pdf").write_text("x")
     (docs / "Visa tracker.xlsx").write_text("x")
+    from claire.hands.selfedit import SelfEdit               # her own code: a pretend repo, a pretend (passing) test run
+    from test_hands2 import mini_repo
+    h.selfedit = SelfEdit(mini_repo(), tempfile.mkdtemp(), runner=lambda t: (True, "ok"))
     s.hands = app.c.hands = h
     h.on_change = lambda: s.hub.publish("pending", items=h.pending())
     c = app.c
@@ -79,6 +82,19 @@ def main():
                 pg.click("#askYes")
                 time.sleep(0.8)
                 pg.screenshot(path=str(OUT / "hands_done.png"))
+                # Phase 4.5: Task Manager awareness, RAM warning, her own code
+                from claire.hands.watch import RamWatch
+                RamWatch(h, lambda t: s._say(t, speak=False), reader=lambda: {"mem_total": 16 << 30, "mem_free": 2 << 30}).check()
+                time.sleep(1.2)
+                pg.screenshot(path=str(OUT / "hands_ram.png"))
+                pg.click("#askNo"); time.sleep(0.5)
+                say(pg, "Make your greeting warmer", "I've prepared change #1 and all my tests pass. Say apply it and I'll ask you first.")
+                h.call("propose_change", {"path": "claire/greet.py", "old": "'hello'", "new": "'hello Carl, good to see you'",
+                                          "reason": "a warmer greeting"})
+                h.call("apply_change", {"id": 1})
+                time.sleep(0.9)
+                pg.screenshot(path=str(OUT / "hands_selfedit.png"))
+                pg.click("#askNo"); time.sleep(0.5)
                 pg.click("#memBtn"); time.sleep(0.6)
                 pg.screenshot(path=str(OUT / "panel_memories.png"))
                 pg.click("#tabJour"); time.sleep(0.6)

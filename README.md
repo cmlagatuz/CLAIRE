@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.5.0 · Phase 4 (Hands)
+# C.L.A.I.R.E. — v2.6.0 · Phase 4 (Hands)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ![C.L.A.I.R.E.'s window: a living network of light, with a question card asking permission](docs/images/hands_ask.png)
@@ -81,7 +81,36 @@ is kept in `data\actions.jsonl`.
 |---|---|
 | ![Actions tab, dark](docs/images/panel_actions.png) | ![Actions tab, light](docs/images/panel_actions_light.png) |
 
-**What she will never do:** delete, send, install, or run commands — those tools simply don't exist. Other rules, all covered by tests:
+### New in v2.6 — she watches Task Manager, protects your RAM, and can improve her own code
+You asked for her to take much more control. She now has it, with one rule that stays: **she proposes, you decide**.
+
+| You say / she notices | What she does | Asks first? |
+|---|---|---|
+| “What's using my memory?” | Looks at what is running (like Task Manager), grouped by program: *Chrome 3.1 GB (8 processes)* | No — only reads |
+| **Memory goes above 85 %** (even when you haven't asked her anything) | Speaks up once, names the heavy programs and offers to close the biggest one she is allowed to touch | **Yes**, every time |
+| “Close Chrome” | Asks the program to close politely (like clicking its X — never forced) | **Yes**, every time |
+| “Read your greeting code” / “make your greeting warmer” | Reads her own code, writes a change and **tests it on a copy** with all her tests | No — nothing changes yet |
+| “Apply it” | Shows you the exact change (a diff) and asks; if you say yes it is applied, with a backup | **Yes**, every time |
+| “Undo that” | Puts the backup back (unless you edited the file since) | **Yes**, every time |
+
+![Memory is high: she names the programs and asks before closing Chrome](docs/images/hands_ram.png)
+
+![She wants to change her own code: you see the diff and tests-passed before saying yes](docs/images/hands_selfedit.png)
+
+- **Always never applies** to closing programs or changing her own code; the *Always* button is hidden for them.
+- **Never closed:** Windows' own parts (`svchost`, `explorer`, `lsass`, …), security software, terminals, Python, and **Ollama** (her brain).
+- **Her code:** she may change `claire/` (except the files below), `tests/`, `docs/`, README, ROADMAP and `identity.md` — only `.py`, `.html`, `.md`.
+  **Off limits to her** (only you can edit these, by hand): her safety rules `claire/hands/`, the window server `claire/web.py`,
+  `claire/cli.py`, `claire/config.py`, the safety tests, `settings.json`, your `data` folder, and every `.bat` launcher.
+  A change that makes any test fail is rejected automatically. Changes take effect after you restart her.
+  Backups are in `data\backups`, proposals in `data\proposals`, and everything is in the Actions log.
+- Turn the memory watcher off or change its level: `"tools": {"ram_watch": true, "ram_warn_percent": 85}`.
+
+**Not built (on purpose):** taking over or disconnecting *other* devices on your network, and acting with no approval at all.
+A 7B local model gets things wrong sometimes; asking first is what keeps one wrong guess from costing you your work.
+**Next for your devices:** the Samsung phone and watch link (Wi-Fi ADB / Samsung tools) and a read-only network map — planned as Phase 4.7.
+
+**What she will never do:** delete, send, install, or run commands — those tools simply don't exist (her only way to change files is the tested, approved change to her own code above). Other rules, all covered by tests:
 - Files only inside the folders in `tools.folders` (default Documents, Downloads, Desktop); `..` tricks, shortcut/link
   escapes and network paths (`\\server\share`) are refused.
 - Programs and files that can run code (`.exe .bat .ps1 .lnk .js .vbs .docm …`) are never opened — she tells you where they are.

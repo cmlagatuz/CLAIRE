@@ -36,6 +36,19 @@ Rules for every phase: **local first** · **ask before acting** · **tests must 
 | 4.4 | Approval: spoken or typed yes / no / always, or buttons on a question card in her window | ✅ v2.5 |
 | 4.5 | Audit log (`data\actions.jsonl`) + **Actions** tab in the window | ✅ v2.5 |
 | 4.6 | Safety rules, tested: no delete/send/run-command tools, allowed folders only, no `..`/link/network-path escapes, programs and macro files never opened, http(s) links only (no hidden logins), apps only from her list | ✅ v2.5 |
+### Phase 4.5 · Control — Task Manager, RAM, self-editing  ✅ v2.6.0
+| # | Milestone | Status |
+|---|---|---|
+| 4.5.1 | Task Manager awareness (programs grouped, biggest first) | ✅ |
+| 4.5.2 | RAM watcher: warns once, offers to close the biggest allowed program (always asks, never system/Ollama/Python) | ✅ |
+| 4.5.3 | Self-editing: propose → tested on a copy → diff shown → your yes → applied with backup → undo; safety files protected | ✅ |
+### Phase 4.7 · Devices — planned
+| # | Milestone | Status |
+|---|---|---|
+| 4.7.1 | Read-only network map (devices on your Wi-Fi, flag new/unknown) | ⬜ |
+| 4.7.2 | Samsung phone link (Wi-Fi ADB: notifications, battery, open app) — ask-first | ⬜ |
+| 4.7.3 | Samsung watch via SmartThings / Tasker shortcuts — ask-first | ⬜ |
+
 ## Phase 5 · Knowledge — your documents, with sources
 ## Phase 6 · Growth — memory review, evaluation set, optional fine-tune
 ## Phase 7 · Autonomy — briefings, schedules, proactive reminders

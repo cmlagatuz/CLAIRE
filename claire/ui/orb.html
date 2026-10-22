@@ -55,6 +55,10 @@
   .ask .q { flex: 1; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
   .ask .q small { display: block; color: var(--dim); font-size: 12px; margin-top: 2px; }
   .ask .yes { border-color: #a58cff; }
+  .ask { flex-wrap: wrap; }
+  .ask pre { flex-basis: 100%; margin: 4px 0 0; max-height: 28vh; overflow: auto; font-size: 12px; line-height: 1.45;
+             color: var(--dim); background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
+             white-space: pre-wrap; }
   .ev { font-size: 12px; color: var(--dim); }
   .ev.bad { color: var(--err); }
   .dock { pointer-events: auto; width: min(720px, 100%); display: flex; gap: 8px; padding: 8px;
@@ -501,7 +505,12 @@ let asking = null;
 function showAsk(items) {
   asking = items && items.length ? items[items.length - 1] : null;
   $("ask").classList.toggle("on", !!asking);
-  if (asking) { const q = $("askQ"); q.replaceChildren(document.createTextNode(asking.what + "?"), el("small", "", "Say yes or no, or tap a button.")); }
+  document.querySelectorAll("#ask pre").forEach(n => n.remove());
+  if (asking) {
+    const q = $("askQ"); q.replaceChildren(document.createTextNode(asking.what + "?"), el("small", "", "Say yes or no, or tap a button."));
+    if (asking.detail) $("ask").append(el("pre", "", asking.detail));
+    $("askAlways").hidden = ["apply_change", "undo_change", "close_program"].includes(asking.tool);
+  }
   if (panel.classList.contains("open") && tab === "hands") refresh();
 }
 const decide = (yes, always) => { if (asking) { const id = asking.id; asking = null; $("ask").classList.remove("on"); api("/api/approve", { id, yes, always }); } };

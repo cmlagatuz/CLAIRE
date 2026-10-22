@@ -21,6 +21,8 @@ DEFAULTS = {
                  "settings": "ms-settings:", "edge": "msedge", "chrome": "chrome", "task manager": "taskmgr"},
         "always": [],                      # tools you told her never to ask about again
         "volume_step": 10,
+        "ram_watch": True,                 # warn (once in a while) when memory runs high, and offer to close the biggest app
+        "ram_warn_percent": 85,
     },
     "voice": {
         "enabled": True,

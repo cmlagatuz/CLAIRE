@@ -37,6 +37,16 @@ class FakePC:
     def volume_taps(self, k, n):
         self.did.append(("volume", k, n))
 
+    procs = [{"name": "chrome.exe", "pid": i, "mb": 400.0} for i in range(1, 9)] + [
+        {"name": "Code.exe", "pid": 20, "mb": 900.0}, {"name": "svchost.exe", "pid": 30, "mb": 2000.0},
+        {"name": "python.exe", "pid": 31, "mb": 700.0}, {"name": "ollama.exe", "pid": 32, "mb": 6000.0}]
+
+    def list_processes(self):
+        return list(self.procs)
+
+    def close_program(self, name):
+        self.did.append(("close", name))
+
 
 def setup_hands(tmp=None, **tools):
     tmp = tmp or tempfile.mkdtemp()
@@ -230,7 +240,9 @@ class Approval(unittest.TestCase):
     def test_there_is_no_way_to_delete_send_or_run(self):
         h, pc, _ = setup_hands()
         names = {s["function"]["name"] for s in h.specs()}
-        self.assertEqual(names, {"system_status", "find_files", "open_file", "open_app", "open_website", "set_volume"})
+        self.assertEqual(names, {"system_status", "find_files", "open_file", "open_app", "open_website", "set_volume",
+                                 "top_processes", "close_program", "read_own_file", "propose_change", "show_change",
+                                 "apply_change", "undo_change"})
         for bad in ("delete_file", "run_command", "send_email", "shell", "install"):
             self.assertEqual(h.call(bad, {"command": "del *"})["status"], "error")
         self.assertEqual(pc.did, [])

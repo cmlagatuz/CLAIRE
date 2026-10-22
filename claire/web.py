@@ -19,6 +19,7 @@ from . import __version__, config, doctor, hands as hands_mod
 from .brain import BrainOffline
 from .cli import HUSH, STOP_LISTENING, VOICE_INTENTS, App
 from .signals import signals
+from .hands.watch import RamWatch
 from .voice import SentenceBuffer
 from .voicechat import VoiceChooser, VoiceControl
 
@@ -114,8 +115,17 @@ class WebSession:
                             self.hub.publish("note", text="From our last chat I learned: " + "; ".join(facts))
         except Exception as e:
             self.hub.publish("error", text=f"Start-up problem: {e}")
+            self.start_ram_watch()
         finally:
             signals.activity = "idle"
+
+    def start_ram_watch(self):
+        """Task-Manager-style eye on memory: warns once when it runs high and offers to close the biggest program."""
+        t = self.app.c.cfg.get("tools", {})
+        if not (self.hands and self.hands.enabled and t.get("ram_watch", True)) or getattr(self, "watch", None):
+            return
+        self.watch = RamWatch(self.hands, lambda text: self._say(text), warn_at=t.get("ram_warn_percent", 85))
+        self.watch.start()
 
     # ---------------- conversation ----------------
     def submit(self, text, spoken=False):
@@ -388,6 +398,8 @@ class WebSession:
         return res["status"] in ("done", "denied")
 
     def close(self):
+        if getattr(self, "watch", None):
+            self.watch.stop()
         if self.hf_stop:
             self.hf_stop.set()
         self.stop_speaking()

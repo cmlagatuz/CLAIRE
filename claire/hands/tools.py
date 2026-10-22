@@ -9,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import files, sysinfo
+from .. import config as _config
+from . import files, procs, selfedit, sysinfo
 from .files import Refused
 from .platform import Platform
 
@@ -23,6 +24,30 @@ SPECS = [
     {"name": "system_status", "ask": False,
      "description": "Check how this PC is doing: processor load, memory, disk space, battery, uptime.",
      "properties": {"topic": {"type": "string", "enum": list(sysinfo.TOPICS)}}, "required": []},
+    {"name": "top_processes", "ask": False,
+     "description": "Look at what is running (like Task Manager): the programs using the most memory.",
+     "properties": {"count": {"type": "integer", "description": "how many programs, default 5"}}, "required": []},
+    {"name": "close_program", "ask": True,
+     "description": "Politely ask a running program to close to free memory (never forced; never Windows parts). "
+                    "Use the name from top_processes. Asks the user first.",
+     "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    {"name": "read_own_file", "ask": False,
+     "description": "Read one of my own code files (e.g. claire/core.py) so I can improve it.",
+     "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    {"name": "propose_change", "ask": False,
+     "description": "Prepare an edit to my own code: replace the exact text 'old' (appears once) with 'new' in 'path'; "
+                    "leave 'old' empty to create a new file. I test it on a copy; nothing real changes yet.",
+     "properties": {"path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"},
+                    "reason": {"type": "string"}}, "required": ["path", "new", "reason"]},
+    {"name": "show_change", "ask": False,
+     "description": "Show a prepared change (its diff and test result) by number.",
+     "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+    {"name": "apply_change", "ask": True,
+     "description": "Apply a prepared change whose tests passed. Asks the user first.",
+     "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+    {"name": "undo_change", "ask": True,
+     "description": "Undo one of my applied changes (the latest if no id). Asks the user first.",
+     "properties": {"id": {"type": "integer"}}, "required": []},
     {"name": "find_files", "ask": False,
      "description": "Search file and folder names in the user's Documents, Downloads and Desktop. Does not open anything.",
      "properties": {"query": {"type": "string", "description": "words from the file name"}}, "required": ["query"]},
@@ -41,6 +66,7 @@ SPECS = [
      "properties": {"action": {"type": "string", "enum": ["up", "down", "mute"]}}, "required": ["action"]},
 ]
 BY_NAME = {s["name"]: s for s in SPECS}
+NO_ALWAYS = {"apply_change", "undo_change", "close_program"}     # these are asked every single time, whatever you say
 
 
 def check_url(text):
@@ -60,22 +86,23 @@ def check_url(text):
 
 
 class Pending:
-    def __init__(self, pid, name, args, what, at):
-        self.id, self.name, self.args, self.what, self.at = pid, name, args, what, at
+    def __init__(self, pid, name, args, what, at, detail=""):
+        self.id, self.name, self.args, self.what, self.at, self.detail = pid, name, args, what, at, detail
 
     def view(self):
-        return {"id": self.id, "tool": self.name, "what": self.what}
+        return {"id": self.id, "tool": self.name, "what": self.what, "detail": self.detail}
 
 
 class Hands:
-    def __init__(self, cfg, platform=None, log_path=None, clock=time.time):
+    def __init__(self, cfg, platform=None, log_path=None, clock=time.time, root=None, runner=None):
         self.cfg, self.t = cfg, cfg.get("tools", {})
         self.platform = platform or Platform()
         self.clock = clock
         self.log_path = Path(log_path or Path(cfg["data_dir"]) / "actions.jsonl")
         self._ids = itertools.count(1)
         self._pending, self._lock = {}, threading.RLock()
-        self.always = set(self.t.get("always", [])) & {n for n, s in BY_NAME.items() if s["ask"]}
+        self.always = set(self.t.get("always", [])) & {n for n, s in BY_NAME.items() if s["ask"]} - NO_ALWAYS
+        self.selfedit = selfedit.SelfEdit(root or _config.ROOT, cfg["data_dir"], runner or selfedit.run_tests)
         self.persist = None                                    # called with (key, value) to save a setting
         self.on_done = None                                    # called after an action really happened
         self.on_change = None                                  # called when the pending list changes
@@ -141,7 +168,13 @@ class Hands:
                 if p.name == name and p.args == args:
                     return {"status": "pending", "id": p.id, "text": f"Waiting for your yes: {p.what}"}
             pid = next(self._ids)
-            self._pending[pid] = Pending(pid, name, dict(args), what, self.clock())
+            detail = ""
+            if name == "apply_change":                          # you see exactly what she wants to change
+                try:
+                    detail = self.selfedit.load(args["id"])["diff"][:2500]
+                except Refused:
+                    pass
+            self._pending[pid] = Pending(pid, name, dict(args), what, self.clock(), detail)
         self.log("asked", name, args, what)
         self._changed()
         return {"status": "pending", "id": pid, "text": f"{what}? I'm waiting for your yes."}
@@ -150,6 +183,40 @@ class Hands:
         """Check the request and describe it in plain words. Never touches the PC."""
         if name == "system_status":
             return "Check how the PC is doing"
+        if name == "top_processes":
+            return "Look at what is running"
+        if name == "close_program":
+            n = str(args.get("name", "")).strip()
+            if not procs.NAME_OK.match(n):
+                raise Refused("That isn't a program name I can use.")
+            if procs.protected(n):
+                raise Refused(f"{procs.key(n).title()} is part of Windows or part of me — I never close those.")
+            g = [e for e in procs.group(self.platform.list_processes()) if procs.key(e["name"]) == procs.key(n)]
+            if not g:
+                raise Refused(f"I don't see {n} running.")
+            args["name"] = g[0]["name"]
+            return (f"Close {procs.key(g[0]['name']).title()} ({g[0]['count']} process{'es' if g[0]['count'] != 1 else ''}, "
+                    f"{procs.size(g[0]['mb'])}) — unsaved work in it could be lost")
+        if name in ("read_own_file", "propose_change", "show_change"):
+            if name == "show_change":
+                self.selfedit.load(args.get("id"))
+            else:
+                self.selfedit.rel(args.get("path"), for_write=name == "propose_change")
+            return {"read_own_file": "Read my own file", "propose_change": "Prepare a change to my code",
+                    "show_change": "Show a prepared change"}[name]
+        if name == "apply_change":
+            prop, _ = self.selfedit.check_ready(args.get("id"))
+            args["id"] = prop["id"]
+            return (f"Change my own code: apply change #{prop['id']} to {prop['path']} (+{prop['plus']} −{prop['minus']} lines, "
+                    f"all my tests pass) — {prop['reason'] or 'no reason given'}")
+        if name == "undo_change":
+            done = [p for p in self.selfedit.list() if p["status"] == "applied"]
+            pid = args.get("id") or (done[-1]["id"] if done else None)
+            prop = self.selfedit.load(pid) if pid else None
+            if not prop or prop["status"] != "applied":
+                raise Refused("There is nothing of mine to undo.")
+            args["id"] = prop["id"]
+            return f"Undo change #{prop['id']} to {prop['path']}"
         if name == "find_files":
             if not self.allowed():
                 raise Refused("None of my allowed folders exist. Set them in settings.json under tools.folders.")
@@ -199,6 +266,39 @@ class Hands:
 
     def _do_system_status(self, a):
         return sysinfo.describe(sysinfo.read(), str(a.get("topic", "all")).lower())
+
+    def _do_top_processes(self, a):
+        try:
+            n = int(a.get("count") or 5)
+        except (TypeError, ValueError):
+            n = 5
+        return procs.describe(procs.group(self.platform.list_processes()), n)
+
+    def _do_close_program(self, a):
+        self.platform.close_program(a["name"])
+        return f"I asked {procs.key(a['name']).title()} to close."
+
+    def _do_read_own_file(self, a):
+        return self.selfedit.read(a["path"])
+
+    def _do_propose_change(self, a):
+        p = self.selfedit.propose(a["path"], a.get("old"), a.get("new"), a.get("reason"))
+        if p["tests_ok"]:
+            return (f"Change #{p['id']} to {p['path']} is ready: +{p['plus']} −{p['minus']} lines and all my tests pass. "
+                    "Say apply it to go ahead (I'll ask you first).")
+        return f"Change #{p['id']} failed my tests, so I won't use it. Test output:\n{p['tests']}"
+
+    def _do_show_change(self, a):
+        p = self.selfedit.load(a["id"])
+        return f"Change #{p['id']} ({p['status']}) — {p['reason']}\n{p['diff'][:3000]}\nTests: {p['tests']}"
+
+    def _do_apply_change(self, a):
+        p = self.selfedit.apply(a["id"])
+        return f"Applied change #{p['id']} to {p['path']}. Restart me (close and reopen my window) to use it."
+
+    def _do_undo_change(self, a):
+        p = self.selfedit.undo(a["id"])
+        return f"Undid change #{p['id']} to {p['path']}. Restart me to go back to the old version."
 
     def _do_find_files(self, a):
         found = files.find(a.get("query"), self.allowed())
@@ -252,6 +352,7 @@ class Hands:
             p = self._pending.pop(int(pid), None)
         if not p:
             return {"status": "error", "text": "That question has already been answered or timed out."}
+        always = always and p.name not in NO_ALWAYS
         if always and BY_NAME[p.name]["ask"]:
             self.always.add(p.name)
             self.t["always"] = sorted(self.always)
@@ -280,7 +381,9 @@ class Hands:
             return None
         pid = pend[-1]["id"]
         if ALWAYS.match(text):
-            return self.approve(pid, always=True)["text"] + " I won't ask about that again."
+            res = self.approve(pid, always=True)
+            return res["text"] + (" I won't ask about that again." if res.get("always") else
+                                  " (I always ask about that kind of thing, though.)" if res["status"] == "done" else "")
         if YES.match(text):
             return self.approve(pid)["text"]
         if NO.match(text):

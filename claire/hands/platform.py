@@ -52,3 +52,18 @@ class Platform:
             user32.keybd_event(VK[key], 0, 0, 0)
             user32.keybd_event(VK[key], 0, 2, 0)                    # key up
             time.sleep(0.004)
+
+    def list_processes(self):
+        from . import procs
+        return procs.read()
+
+    def close_program(self, name):
+        """Politely ask every process of this program to close (like clicking its X). Never forces it."""
+        if self.windows:
+            exe = name if name.lower().endswith(".exe") else name + ".exe"
+            done = subprocess.run(["taskkill", "/IM", exe], timeout=20, capture_output=True,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        else:
+            done = subprocess.run(["pkill", "-x", name], timeout=20, **{"capture_output": True})
+        if done.returncode != 0:
+            raise FileNotFoundError(name)
