@@ -17,7 +17,7 @@ from .files import Refused
 ALLOWED = ("claire/", "tests/", "docs/", "README.md", "ROADMAP.md", "identity.md")
 EXTS = {".py", ".html", ".md"}
 # her safety rules and everything that could be used to weaken them — only Carl edits these, by hand
-PROTECTED = ("claire/hands/", "tests/test_phase4.py", "tests/test_hands2.py", "claire/web.py", "claire/cli.py", "claire/config.py")
+PROTECTED = ("claire/hands/", "tests/test_phase4.py", "tests/test_hands2.py", "tests/test_devices.py", "tests/test_knowledge.py", "claire/web.py", "claire/cli.py", "claire/config.py")
 MAX_BYTES = 200_000
 IGNORE = shutil.ignore_patterns(".venv", ".git", "data", "voices", "__pycache__", "*.pyc", "docs")
 

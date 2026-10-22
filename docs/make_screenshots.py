@@ -42,6 +42,8 @@ def build():
     h.call("open_website", {"url": "https://example.com"}); h.answer("no")
     h.call("open_app", {"name": "powershell"})
     h.call("open_file", {"path": "C:\\Windows\\System32\\cmd.exe"})
+    (docs / "visa-guide.md").write_text("Saudi visa processing takes about ten working days.\n\nThe agency fee is 500 SAR per candidate.\n")
+    (docs / "hr-policy.txt").write_text("Annual leave is thirty days. Visa costs are paid by the employer.\n")
     return s, app, h
 
 
@@ -95,6 +97,20 @@ def main():
                 time.sleep(0.9)
                 pg.screenshot(path=str(OUT / "hands_selfedit.png"))
                 pg.click("#askNo"); time.sleep(0.5)
+                # Phase 4.7: the network, read-only; she asks before remembering devices as yours
+                net_text = h.call("network_map", {})["text"].splitlines()
+                say(pg, "Who's on my Wi-Fi?", net_text[0] + " " + net_text[1])
+                h.call("network_trust", {})
+                time.sleep(0.9)
+                pg.screenshot(path=str(OUT / "hands_network.png"))
+                pg.click("#askNo"); time.sleep(0.5)
+                # Phase 5: an answer from your own documents, with its sources
+                h.knowledge.update()
+                hit = h.knowledge.search("visa processing take")[0]
+                say(pg, "According to my documents, how long does visa processing take?",
+                    "About ten working days [1].\nSources: [1] " + Path(hit["path"]).name + " — " + hit["loc"])
+                time.sleep(0.9)
+                pg.screenshot(path=str(OUT / "docs_answer.png"))
                 pg.click("#memBtn"); time.sleep(0.6)
                 pg.screenshot(path=str(OUT / "panel_memories.png"))
                 pg.click("#tabJour"); time.sleep(0.6)

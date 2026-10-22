@@ -42,13 +42,21 @@ Rules for every phase: **local first** · **ask before acting** · **tests must 
 | 4.5.1 | Task Manager awareness (programs grouped, biggest first) | ✅ |
 | 4.5.2 | RAM watcher: warns once, offers to close the biggest allowed program (always asks, never system/Ollama/Python) | ✅ |
 | 4.5.3 | Self-editing: propose → tested on a copy → diff shown → your yes → applied with backup → undo; safety files protected | ✅ |
-### Phase 4.7 · Devices — planned
+### Phase 4.7 · Devices  ✅ v2.7.0
 | # | Milestone | Status |
 |---|---|---|
-| 4.7.1 | Read-only network map (devices on your Wi-Fi, flag new/unknown) | ⬜ |
-| 4.7.2 | Samsung phone link (Wi-Fi ADB: notifications, battery, open app) — ask-first | ⬜ |
-| 4.7.3 | Samsung watch via SmartThings / Tasker shortcuts — ask-first | ⬜ |
+| 4.7.1 | Read-only network map (devices on your Wi-Fi, flag new/unknown; private ranges only) | ✅ |
+| 4.7.2 | Android/Samsung phone link (Wi-Fi ADB: status, connect, open listed apps) — ask-first | ✅ |
+| 4.7.3 | Watch & smart-home via your own named shortcuts (Tasker / SmartThings / Home Assistant, LAN only) — ask-first | ✅ |
 
-## Phase 5 · Knowledge — your documents, with sources
+## Phase 5 · Knowledge — your documents, with sources  ✅ v2.7.0
+| # | Milestone | Status |
+|---|---|---|
+| 5.1 | Local index (SQLite full-text) of allowed folders; incremental updates | ✅ |
+| 5.2 | Readers: txt/md/csv/html/docx/pptx (+ pdf with pypdf), Arabic OK | ✅ |
+| 5.3 | Answers cite file + place (lines / paragraphs / slide / page); "not found" instead of guessing | ✅ |
+| 5.4 | Safety: allowed folders only, links out ignored, document text treated as data | ✅ |
+| 5.5 | Meaning-based search with embeddings (Ollama `nomic-embed-text`) | ⬜ later |
+
 ## Phase 6 · Growth — memory review, evaluation set, optional fine-tune
 ## Phase 7 · Autonomy — briefings, schedules, proactive reminders

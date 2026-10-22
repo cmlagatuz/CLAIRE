@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.6.2 · Phase 4 (Hands)
+# C.L.A.I.R.E. — v2.7.0 · Phase 5 (Knowledge)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ![C.L.A.I.R.E.'s window: a living network of light, with a question card asking permission](docs/images/hands_ask.png)
@@ -112,7 +112,7 @@ You asked for her to take much more control. She now has it, with one rule that 
 
 **Not built (on purpose):** taking over or disconnecting *other* devices on your network, and acting with no approval at all.
 A 7B local model gets things wrong sometimes; asking first is what keeps one wrong guess from costing you your work.
-**Next for your devices:** the Samsung phone and watch link (Wi-Fi ADB / Samsung tools) and a read-only network map — planned as Phase 4.7.
+Your phone, watch and network are covered in the next section.
 
 **What she will never do:** delete, send, install, or run commands — those tools simply don't exist (her only way to change files is the tested, approved change to her own code above). Other rules, all covered by tests:
 - Files only inside the folders in `tools.folders` (default Documents, Downloads, Desktop); `..` tricks, shortcut/link
@@ -130,6 +130,44 @@ Settings in settings.json:
           "always": [], "volume_step": 10}
 ```
 Set `"enabled": false` to switch her hands off. doctor.bat shows which folders she can search.
+
+## Your network, phone and watch (new in v2.7)
+Everything here asks before it acts, and none of it leaves your own network.
+
+| You say | What she does | Asks first? |
+|---|---|---|
+| “Who's on my Wi-Fi?” | Looks at the devices on **your** home network (read-only) and tells you how many there are | No — only reads |
+| “Trust these devices” | Remembers them as yours; from then on she flags any **new** device and tells you to check your router | **Yes** |
+| “How's my phone?” | Model and battery of your Android / Samsung phone | No — only reads |
+| “Connect to my phone at 192.168.1.20:5555” · “open WhatsApp on my phone” | Connects over Wi-Fi · opens an app from your list | **Yes** |
+| “Buzz my watch” (or any shortcut you define) | Runs the named shortcut | **Yes** |
+
+![She lists the devices on your network, then asks before remembering them as yours](docs/images/hands_network.png)
+
+**Set-up (once):**
+- *Phone:* install Google's **platform-tools** (adb) and add it to PATH (or set `"adb_path"`), then on the phone turn on
+  *Developer options → Wireless debugging* and tell her the address it shows. Apps she may open are your list in `tools.phone_apps`.
+- *Samsung watch (and lights, plugs…):* she can't talk to the watch directly. Make a shortcut in **Tasker**, **SmartThings** or
+  **Home Assistant** that has a local web address, and list it by name:
+  `"tools": {"shortcuts": {"buzz my watch": "http://192.168.1.50:8080/buzz"}}`. Shortcuts only work for addresses on your own network.
+
+**Limits, on purpose:** she only looks at private home networks (a public address is never scanned), has no tool to block, kick,
+scan ports on or attack any device, and only runs phone apps and shortcuts that *you* listed.
+
+## Your documents, with sources (new in v2.7 — Phase 5)
+She keeps a private index of the documents in the folders you allow (Documents, Downloads, Desktop by default). Ask about what is
+in them and she answers **from the passages she finds, with the file and the place** — so you can check every answer.
+
+![An answer from your own documents, with its source file and lines](docs/images/docs_answer.png)
+
+- Reads `.txt .md .csv .html .docx .pptx` out of the box, and `.pdf` once you run `pip install pypdf` (inside her `.venv`).
+  Arabic and other languages work. Search is local (SQLite), nothing is uploaded, and she only reads files inside your allowed folders.
+- Ask naturally: “according to my documents, how long does visa processing take?” · “what does the HR policy say about leave?”
+  · “refresh my index” after adding many files (she also refreshes it on her own, cheaply — only new or changed files are read).
+- Places are **lines** (text), **paragraphs** (Word), **slides** (PowerPoint) and **pages** (PDF). If the passages don't contain
+  the answer she says so instead of guessing. Text inside a document is treated as data, never as instructions to her.
+- Settings: `"knowledge": {"folders": ["D:/Work/Docs"], "extensions": [".md", ".docx"]}` (leave `null` to use `tools.folders`
+  and every supported type). The index lives in `data\knowledge.db` — delete it any time; she rebuilds it.
 
 ## Her voice
 | Engine | Quality | Where it runs | Notes |

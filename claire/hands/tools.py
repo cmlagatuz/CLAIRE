@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .. import config as _config
-from . import files, procs, selfedit, sysinfo
+from . import files, net, phone, procs, selfedit, sysinfo
 from .files import Refused
 from .platform import Platform
 
@@ -48,6 +48,31 @@ SPECS = [
     {"name": "undo_change", "ask": True,
      "description": "Undo one of my applied changes (the latest if no id). Asks the user first.",
      "properties": {"id": {"type": "integer"}}, "required": []},
+    {"name": "network_map", "ask": False,
+     "description": "Look at the devices on the user's own Wi-Fi/home network (read-only) and flag ones not seen before.",
+     "properties": {}, "required": []},
+    {"name": "network_trust", "ask": True,
+     "description": "Remember the devices just listed by network_map as the user's own, so new ones can be flagged. Asks first.",
+     "properties": {}, "required": []},
+    {"name": "phone_status", "ask": False,
+     "description": "Check the user's Android/Samsung phone over Wi-Fi: model and battery (read-only).",
+     "properties": {}, "required": []},
+    {"name": "phone_connect", "ask": True,
+     "description": "Connect to the user's phone by its Wi-Fi address like 192.168.1.20:5555 (Wireless debugging). Asks first.",
+     "properties": {"address": {"type": "string"}}, "required": ["address"]},
+    {"name": "phone_open_app", "ask": True,
+     "description": "Open an app on the user's phone from the user's list (e.g. whatsapp, camera). Asks first.",
+     "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    {"name": "run_shortcut", "ask": True,
+     "description": "Run one of the user's named shortcuts (e.g. buzz my watch, lights on) from their list. Asks first.",
+     "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    {"name": "search_documents", "ask": False,
+     "description": "Search the user's own documents (notes, reports, PDFs…) and return passages WITH their sources. "
+                    "Use it for questions about what is in his files; answer only from the passages and cite them like [1].",
+     "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    {"name": "index_documents", "ask": False,
+     "description": "Refresh my index of the user's documents (new and changed files only).",
+     "properties": {}, "required": []},
     {"name": "find_files", "ask": False,
      "description": "Search file and folder names in the user's Documents, Downloads and Desktop. Does not open anything.",
      "properties": {"query": {"type": "string", "description": "words from the file name"}}, "required": ["query"]},
@@ -66,6 +91,13 @@ SPECS = [
      "properties": {"action": {"type": "string", "enum": ["up", "down", "mute"]}}, "required": ["action"]},
 ]
 BY_NAME = {s["name"]: s for s in SPECS}
+GROUPS = {   # which tools are shown to the model for which kind of request (19+ tools at once make a 7B model slow and muddled)
+    "pc": ("system_status", "find_files", "open_file", "open_app", "open_website", "set_volume", "top_processes",
+           "close_program"),
+    "self": ("read_own_file", "propose_change", "show_change", "apply_change", "undo_change"),
+    "devices": ("network_map", "network_trust", "phone_status", "phone_connect", "phone_open_app", "run_shortcut"),
+    "docs": ("search_documents", "index_documents"),
+}
 NO_ALWAYS = {"apply_change", "undo_change", "close_program"}     # these are asked every single time, whatever you say
 
 
@@ -103,6 +135,8 @@ class Hands:
         self._pending, self._lock = {}, threading.RLock()
         self.always = set(self.t.get("always", [])) & {n for n, s in BY_NAME.items() if s["ask"]} - NO_ALWAYS
         self.selfedit = selfedit.SelfEdit(root or _config.ROOT, cfg["data_dir"], runner or selfedit.run_tests)
+        from ..knowledge import Knowledge
+        self.knowledge = Knowledge(cfg)
         self.persist = None                                    # called with (key, value) to save a setting
         self.on_done = None                                    # called after an action really happened
         self.on_change = None                                  # called when the pending list changes
@@ -117,6 +151,15 @@ class Hands:
             "name": s["name"], "description": s["description"],
             "parameters": {"type": "object", "properties": s["properties"], "required": s["required"]}}}
             for s in SPECS] if self.enabled else []
+
+    def specs_for(self, text="", all_tools=False):
+        """Only the tool groups this message is about (all of them for a follow-up like "yes, that one")."""
+        from ..core import GROUP_WORDS
+        names = set()
+        for g, rx in GROUP_WORDS.items():
+            if all_tools or rx.search(text or ""):
+                names.update(GROUPS[g])
+        return [sp for sp in self.specs() if sp["function"]["name"] in names] or self.specs()
 
     def auto_close(self):
         """Programs Carl listed in settings.json (tools.auto_close) that she may close without asking. Only he can add to it."""
@@ -223,6 +266,35 @@ class Hands:
                 raise Refused("There is nothing of mine to undo.")
             args["id"] = prop["id"]
             return f"Undo change #{prop['id']} to {prop['path']}"
+        if name == "network_map":
+            return "Look at the devices on my network"
+        if name == "network_trust":
+            if not getattr(self, "last_devices", None):
+                raise Refused("Let me look at the network first — ask me to scan it.")
+            return f"Remember these {len(self.last_devices)} devices as yours, so I can warn you about new ones"
+        if name == "phone_status":
+            return "Check the phone"
+        if name == "phone_connect":
+            args["address"] = phone.check_address(args.get("address"))
+            return f"Connect to your phone at {args['address']}"
+        if name == "phone_open_app":
+            key, _pkg = phone.check_app(args.get("name"), self.t.get("phone_apps"))
+            args["name"] = key
+            return f"Open {key.title()} on your phone"
+        if name == "run_shortcut":
+            key = str(args.get("name", "")).strip().lower()
+            sc = {k.lower(): v for k, v in (self.t.get("shortcuts") or {}).items()}
+            if key not in sc:
+                raise Refused("I only run shortcuts on my list. I have: " + (", ".join(sorted(sc)) or "none yet — add them in settings.json under tools.shortcuts") + ".")
+            self._shortcut_url(sc[key])
+            args["name"] = key
+            return f"Run your shortcut “{key}”"
+        if name == "search_documents":
+            if not str(args.get("query", "")).strip():
+                raise Refused("What should I look for in your documents?")
+            return "Search your documents"
+        if name == "index_documents":
+            return "Refresh my index of your documents"
         if name == "find_files":
             if not self.allowed():
                 raise Refused("None of my allowed folders exist. Set them in settings.json under tools.folders.")
@@ -305,6 +377,83 @@ class Hands:
     def _do_undo_change(self, a):
         p = self.selfedit.undo(a["id"])
         return f"Undid change #{p['id']} to {p['path']}. Restart me to go back to the old version."
+
+    @staticmethod
+    def _shortcut_url(url):
+        """Shortcuts only ever reach devices on your own network (or this PC) over plain http(s)."""
+        from urllib.parse import urlparse
+        u = urlparse(str(url))
+        host = u.hostname or ""
+        if u.scheme not in ("http", "https") or "@" in u.netloc or not (host == "localhost" or net.is_private(host) or host == "127.0.0.1"):
+            raise Refused("That shortcut isn't an address on your own network, so I won't run it.")
+        return str(url)
+
+    def _do_network_map(self, a):
+        me = self.platform.local_ip()
+        sub = net.lan(me)
+        devices = net.parse_arp(self.platform.arp_table(sub))
+        devices = [d for d in devices if d["ip"] != me]
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(16) as ex:
+            for d, nm in zip(devices[:60], ex.map(lambda d: self.platform.device_name(d["ip"]), devices[:60])):
+                d["name"] = nm
+        self.last_devices = devices
+        return net.describe(devices, net.Known(self.cfg["data_dir"]).macs(), me)
+
+    def _do_network_trust(self, a):
+        net.Known(self.cfg["data_dir"]).trust([d["mac"] for d in self.last_devices])
+        return f"Okay — I'll treat these {len(self.last_devices)} devices as yours and warn you about new ones."
+
+    def _adb(self, *args):
+        code, out = self.platform.adb(list(args), self.t.get("adb_path") or "adb")
+        return code, out
+
+    def _no_adb(self):
+        return ("I can't find adb. Install Google's 'platform-tools', add it to PATH (or set tools.adb_path in settings.json), "
+                "and turn on Wireless debugging on the phone.")
+
+    def _do_phone_status(self, a):
+        try:
+            code, out = self._adb("devices")
+            devs = [d for d in phone.parse_devices(out) if d[1] == "device"]
+            if not devs:
+                return "I can't see your phone. Turn on Wireless debugging, then tell me to connect to it (its address is shown there)."
+            _, model = self._adb("shell", "getprop", "ro.product.model")
+            _, batt = self._adb("shell", "dumpsys", "battery")
+        except FileNotFoundError:
+            raise Refused(self._no_adb())
+        b = phone.parse_battery(batt)
+        return f"Your {model.strip() or 'phone'} is connected." + (f" Battery {b['percent']}%, {b['state']}." if b else "")
+
+    def _do_phone_connect(self, a):
+        try:
+            code, out = self._adb("connect", a["address"])
+        except FileNotFoundError:
+            raise Refused(self._no_adb())
+        if code != 0 or "connected" not in out.lower() or "cannot" in out.lower() or "failed" in out.lower():
+            raise Refused("I couldn't connect: " + out[:120])
+        return f"Connected to your phone at {a['address']}."
+
+    def _do_phone_open_app(self, a):
+        _, pkg = phone.check_app(a["name"], self.t.get("phone_apps"))
+        try:
+            code, out = self._adb("shell", "monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1")
+        except FileNotFoundError:
+            raise Refused(self._no_adb())
+        if code != 0 or "No activities found" in out or "Error" in out:
+            raise Refused(f"I couldn't open {a['name']} on the phone. Is it connected and installed?")
+        return f"Opened {a['name']} on your phone."
+
+    def _do_run_shortcut(self, a):
+        sc = {k.lower(): v for k, v in (self.t.get("shortcuts") or {}).items()}
+        self.platform.http_get(self._shortcut_url(sc[a["name"]]))
+        return f"Ran “{a['name']}”."
+
+    def _do_search_documents(self, a):
+        return self.knowledge.answer_context(a["query"])
+
+    def _do_index_documents(self, a):
+        return self.knowledge.update().describe()
 
     def _do_find_files(self, a):
         found = files.find(a.get("query"), self.allowed())

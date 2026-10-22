@@ -67,3 +67,55 @@ class Platform:
             done = subprocess.run(["pkill", "-x", name], timeout=20, **{"capture_output": True})
         if done.returncode != 0:
             raise FileNotFoundError(name)
+
+    # ---- Phase 4.7: network, phone, shortcuts ----------------------------------------------------
+    def local_ip(self):
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("10.255.255.255", 1))                        # no packet is sent; it only picks the right adapter
+            return s.getsockname()[0]
+        finally:
+            s.close()
+
+    def arp_table(self, sweep_net=None):
+        """Wake the devices on a /24 with one quick ping each, then read the ARP table."""
+        from concurrent.futures import ThreadPoolExecutor
+        if sweep_net is not None:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            cmd = (["ping", "-n", "1", "-w", "250"] if self.windows else ["ping", "-c", "1", "-W", "1"])
+
+            def ping(ip):
+                try:
+                    subprocess.run(cmd + [str(ip)], capture_output=True, timeout=5, creationflags=flags)
+                except Exception:
+                    pass
+            with ThreadPoolExecutor(48) as ex:
+                list(ex.map(ping, sweep_net.hosts()))
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        out = subprocess.run(["arp", "-a"] if self.windows else ["arp", "-an"], capture_output=True, text=True,
+                             timeout=15, creationflags=flags)
+        return out.stdout
+
+    def device_name(self, ip):
+        import socket
+        try:
+            return socket.gethostbyaddr(ip)[0].split(".")[0]
+        except Exception:
+            return ""
+
+    def adb(self, args, adb_path="adb"):
+        """Run one adb command (a fixed list of words — never a shell string)."""
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            done = subprocess.run([adb_path or "adb"] + list(args), capture_output=True, text=True, timeout=25,
+                                  creationflags=flags)
+        except FileNotFoundError:
+            raise FileNotFoundError("adb")
+        return done.returncode, (done.stdout + done.stderr).strip()
+
+    def http_get(self, url):
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "CLAIRE"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return r.status

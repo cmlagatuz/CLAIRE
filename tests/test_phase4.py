@@ -44,6 +44,38 @@ class FakePC:
     def list_processes(self):
         return list(self.procs)
 
+    # ---- Phase 4.7 fakes
+    ip = "192.168.1.10"
+    arp = ("Interface: 192.168.1.10 --- 0x4\n  Internet Address      Physical Address      Type\n"
+           "  192.168.1.1           aa-bb-cc-00-00-01     dynamic\n  192.168.1.20          aa-bb-cc-00-00-20     dynamic\n"
+           "  192.168.1.255         ff-ff-ff-ff-ff-ff     static\n  224.0.0.22            01-00-5e-00-00-16     static\n")
+    names = {"192.168.1.1": "router", "192.168.1.20": "galaxy"}
+    adb_log, adb_out, shortcuts_hit = [], {}, []
+
+    def local_ip(self):
+        return self.ip
+
+    def arp_table(self, sweep_net=None):
+        self.swept = sweep_net
+        return self.arp
+
+    def device_name(self, ip):
+        return self.names.get(ip, "")
+
+    def adb(self, args, adb_path="adb"):
+        self.adb_log.append(list(args))
+        if self.adb_out is None:
+            raise FileNotFoundError("adb")
+        key = " ".join(args)
+        for k, v in self.adb_out.items():
+            if key.startswith(k):
+                return v
+        return 0, ""
+
+    def http_get(self, url):
+        self.shortcuts_hit.append(url)
+        return 200
+
     def close_program(self, name):
         self.did.append(("close", name))
 
@@ -242,7 +274,9 @@ class Approval(unittest.TestCase):
         names = {s["function"]["name"] for s in h.specs()}
         self.assertEqual(names, {"system_status", "find_files", "open_file", "open_app", "open_website", "set_volume",
                                  "top_processes", "close_program", "read_own_file", "propose_change", "show_change",
-                                 "apply_change", "undo_change"})
+                                 "apply_change", "undo_change", "network_map", "network_trust", "phone_status",
+                                 "phone_connect", "phone_open_app", "run_shortcut", "search_documents",
+                                 "index_documents"})
         for bad in ("delete_file", "run_command", "send_email", "shell", "install"):
             self.assertEqual(h.call(bad, {"command": "del *"})["status"], "error")
         self.assertEqual(pc.did, [])

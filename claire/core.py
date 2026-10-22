@@ -42,12 +42,18 @@ HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files
 
 # Only messages that sound like a PC action get the tools (and their long instructions). Everything else is a plain,
 # fast chat — offering 13 tools to a 7B model makes every single answer slower.
-TOOL_WORDS = re.compile(
-    r"\b(open|launch|start|close|quit|exit|find|search|look for|where(?:'s| is| are)|file|files|folder|document|documents|"
-    r"download|downloads|desktop|volume|louder|quieter|mute|unmute|memory|ram|cpu|processor|disk|storage|space|battery|"
-    r"uptime|process|processes|running|task manager|slow|laggy|your (?:own )?(?:code|files?|greeting|source)|"
-    r"change your|improve yourself|modify|edit|apply|undo|revert|proposal|website|web ?site|\.com|\.org|\.net|http|"
-    r"pc|computer|status|notepad|calculator|paint|chrome|edge|browser|settings|explorer)\b", re.I)
+GROUP_WORDS = {
+    "pc": re.compile(r"\b(open|launch|start|close|quit|find|search|look for|where|file|files|folder|download|downloads|desktop|"
+                     r"volume|louder|quieter|mute|memory|ram|cpu|processor|disk|storage|space|battery|uptime|process|processes|"
+                     r"running|task manager|slow|laggy|website|\.com|\.org|http|pc|computer|status|notepad|calculator|paint|"
+                     r"chrome|edge|browser|settings|explorer)\b", re.I),
+    "self": re.compile(r"\b(your (?:own )?(?:code|files?|greeting|source)|change your|improve yourself|modify|edit|apply|undo|"
+                       r"revert|proposal|yourself)\b", re.I),
+    "devices": re.compile(r"\b(network|wi-?fi|router|devices?|phone|android|samsung|watch|shortcut|buzz|lights?|adb|"
+                          r"trust|connect|intruder|who(?:'s| is) on)\b", re.I),
+    "docs": re.compile(r"\b(document|documents|notes?|my (?:files|papers|reports?|pdfs?)|according to|what does .* say|"
+                       r"in my (?:files|notes|documents)|index|knowledge|sources?|cite|pdf|report)\b", re.I),
+}
 
 SPOKEN_RULE = ("\n- {user} is SPEAKING to you (voice). Answer in 1-3 natural spoken sentences. "
                "No lists, tables, markdown or code unless he asks; say numbers and dates the way people say them.")
@@ -63,6 +69,7 @@ class Claire:
         self.history = []
         self.hands = None                       # Phase 4: set by the app (cli / window) when tools are switched on
         self.tools_ok = True
+        self.hot_before = False
         self.hot = False                        # the last turn used tools, so a follow-up ("yes, that one") may too
         if not self.store.journal():
             for t, d in FIRST_JOURNAL:
@@ -100,7 +107,7 @@ class Claire:
         msgs = [{"role": "system", "content": self.system_prompt(text, spoken)}]
         msgs += self.history[-self.cfg["recent_turns_kept"] * 2:]
         msgs.append({"role": "user", "content": text})
-        answer = self._ask(msgs, on_token, self.wants_tools(text))
+        answer = self._ask(msgs, on_token, self.wants_tools(text), text)
         self.history += [{"role": "user", "content": text}, {"role": "assistant", "content": answer}]
         self.store.log(self.session, "user", ("🎤 " if spoken else "") + text)
         self.store.log(self.session, "assistant", answer)
@@ -110,14 +117,14 @@ class Claire:
         return bool(self.hands and self.hands.enabled and self.tools_ok and hasattr(self.brain, "chat_tools"))
 
     def wants_tools(self, text):
-        return self.using_tools() and (self.hot or bool(TOOL_WORDS.search(text or "")))
+        return self.using_tools() and (self.hot or any(rx.search(text or "") for rx in GROUP_WORDS.values()))
 
-    def _ask(self, msgs, on_token, tools=False):
+    def _ask(self, msgs, on_token, tools=False, user_text=""):
         """The brain's answer; with hands on and a PC-sounding request, she may call tools (up to 4 rounds)."""
-        self.hot = False
+        self.hot_before, self.hot = self.hot, False
         if not tools:
             return self.brain.chat(msgs, stream=True, on_token=on_token)
-        specs, text = self.hands.specs(), ""
+        specs, text = self.hands.specs_for(user_text, all_tools=self.hot_before), ""
         for _ in range(4):
             try:
                 text, calls = self.brain.chat_tools(msgs, specs, on_token=on_token)

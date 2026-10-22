@@ -21,10 +21,15 @@ DEFAULTS = {
                  "settings": "ms-settings:", "edge": "msedge", "chrome": "chrome", "task manager": "taskmgr"},
         "always": [],                      # tools you told her never to ask about again
         "volume_step": 10,
+        "adb_path": "adb",                 # Android platform-tools (phone link)
+        "phone_apps": {"whatsapp": "com.whatsapp", "camera": "com.sec.android.app.camera", "settings": "com.android.settings",
+                       "chrome": "com.android.chrome", "youtube": "com.google.android.youtube"},
+        "shortcuts": {},                   # e.g. {"buzz my watch": "http://192.168.1.50:8080/buzz"} (your own network only)
         "auto_close": [],                  # programs she may close WITHOUT asking, e.g. ["chrome"]; only you can add them here
         "ram_watch": True,                 # warn (once in a while) when memory runs high, and offer to close the biggest app
         "ram_warn_percent": 85,
     },
+    "knowledge": {"folders": None, "extensions": None},      # Phase 5: None = the folders in tools.folders, all file types
     "voice": {
         "enabled": True,
         "speak": "auto",
