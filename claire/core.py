@@ -38,6 +38,8 @@ HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files
               "NEVER ask the user for permission or confirmation yourself ('are you sure?', 'shall I?') and never ask which "
               "program he means when one name fits: just call the tool — the system shows him a single Yes/No question. "
               "After calling a tool that is waiting for his yes, say one short sentence and stop. "
+              "About health: you are NOT a doctor. Never say or imply he is fine or that a reading is safe; never diagnose. If he "
+              "mentions symptoms (chest pain, trouble breathing, numbness…) tell him to call emergency services now. "
               "Never claim an action happened unless a tool result says it did.")
 
 # Only messages that sound like a PC action get the tools (and their long instructions). Everything else is a plain,
@@ -51,7 +53,10 @@ GROUP_WORDS = {
                        r"revert|proposal|yourself)\b", re.I),
     "devices": re.compile(r"\b(network|wi-?fi|router|devices?|phone|android|samsung|watch|shortcut|buzz|lights?|adb|"
                           r"trust|connect|intruder|who(?:'s| is) on)\b", re.I),
-    "docs": re.compile(r"\b(document|documents|notes?|my (?:files|papers|reports?|pdfs?)|according to|what does .* say|"
+    "life": re.compile(r"\b(remind|reminder|reminders|birthday|birthdays|appointment|note|notes|write down|remember to|"
+                       r"heart|pulse|oxygen|spo2|health|steps|sleep|screen time|how long (?:have|did) i|break|tired|"
+                       r"what did i miss|missed)\b", re.I),
+    "docs": re.compile(r"\b(document|documents|my (?:files|papers|reports?|pdfs?)|according to|what does .* say|"
                        r"in my (?:files|notes|documents)|index|knowledge|sources?|cite|pdf|report)\b", re.I),
 }
 
@@ -95,6 +100,9 @@ class Claire:
         last = self.store.last_summaries(3)
         if last:
             parts.append("\n# Recent conversations\n" + "\n".join(f"- {r['started'][:10]}: {r['summary']}" for r in last))
+        brief = self.hands.companion.brief() if self.hands and getattr(self.hands, "companion", None) else ""
+        if brief:
+            parts.append("\n# Today\n" + brief)
         j = self.store.journal(limit=3)
         parts.append("\n# Latest journal entries\n" + "\n".join(f"- {r['at'][:10]}: {r['title']}" for r in j))
         parts.append("\n# Rules for this chat\n- Use memories only when relevant; never invent memories."

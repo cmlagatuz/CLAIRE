@@ -111,6 +111,35 @@ def main():
                     "About ten working days [1].\nSources: [1] " + Path(hit["path"]).name + " — " + hit["loc"])
                 time.sleep(0.9)
                 pg.screenshot(path=str(OUT / "docs_answer.png"))
+                # Phase 4.8: watch alert, break reminder, reminders
+                from claire import companion as comp_mod
+                from test_companion import Dev, Clock
+                from datetime import datetime
+                say(pg, "", "")
+                clock = Clock()
+                comp = comp_mod.Companion(h.cfg, Dev(), lambda t, urgent=False: s._alert(t, urgent), tools=h.cfg["tools"],
+                                          clock=clock, now=lambda: datetime(2026, 10, 23, 14, 0))
+                for bpm in (126, 131, 128):
+                    comp.handle_event({"type": "heart_rate", "bpm": float(bpm)})
+                    clock.adv(30)
+                time.sleep(1.0)
+                pg.screenshot(path=str(OUT / "companion_health.png"))
+                say(pg, "", "")
+                comp.usage.cooldown = 0
+                for i in range(0, 200):                      # ~100 minutes in Chrome without a break
+                    clock.adv(30)
+                    msg = comp.usage.sample("chrome.exe", 0, now=clock())
+                    if msg:
+                        s._alert(msg)
+                        break
+                time.sleep(1.0)
+                pg.screenshot(path=str(OUT / "companion_break.png"))
+                say(pg, "Remind me about Mum's birthday on 14 March every year", "")
+                comp.reminders.add("Mum's birthday", "2027-03-14", "yearly")
+                comp.reminders.add("Call the embassy about the visa", "2026-10-24T10:00")
+                s._alert("Okay, I'll remind you on Sunday 14 March 2027 at 09:00 (repeating yearly). [#1]")
+                time.sleep(0.9)
+                pg.screenshot(path=str(OUT / "companion_reminder.png"))
                 pg.click("#memBtn"); time.sleep(0.6)
                 pg.screenshot(path=str(OUT / "panel_memories.png"))
                 pg.click("#tabJour"); time.sleep(0.6)

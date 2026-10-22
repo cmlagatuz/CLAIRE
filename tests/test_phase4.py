@@ -276,7 +276,8 @@ class Approval(unittest.TestCase):
                                  "top_processes", "close_program", "read_own_file", "propose_change", "show_change",
                                  "apply_change", "undo_change", "network_map", "network_trust", "phone_status",
                                  "phone_connect", "phone_open_app", "run_shortcut", "search_documents",
-                                 "index_documents"})
+                                 "index_documents", "health_status", "add_reminder", "list_reminders",
+                                 "remove_reminder", "take_note", "list_notes", "screen_time"})
         for bad in ("delete_file", "run_command", "send_email", "shell", "install"):
             self.assertEqual(h.call(bad, {"command": "del *"})["status"], "error")
         self.assertEqual(pc.did, [])

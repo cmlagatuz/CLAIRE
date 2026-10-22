@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.7.0 · Phase 5 (Knowledge)
+# C.L.A.I.R.E. — v2.8.0 · Phase 5 (Knowledge) + Companion
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ![C.L.A.I.R.E.'s window: a living network of light, with a question card asking permission](docs/images/hands_ask.png)
@@ -153,6 +153,66 @@ Everything here asks before it acts, and none of it leaves your own network.
 
 **Limits, on purpose:** she only looks at private home networks (a public address is never scanned), has no tool to block, kick,
 scan ports on or attack any device, and only runs phone apps and shortcuts that *you* listed.
+
+## Your phone, watch & health — Companion (new in v2.8)
+She can now watch over things on her own: remind you of birthdays and dates, take notes, tell you when someone messages or calls,
+nudge you to take a break, and raise the alarm when readings from your watch look wrong.
+
+> **Important — read this once.** C.L.A.I.R.E. is **not a medical device and not a doctor.** No watch can reliably detect a heart
+> attack (Samsung's ECG only checks for one rhythm problem, atrial fibrillation). She can only notice *abnormal numbers* and tell you
+> to get help. **She will never tell you that you are fine, and no alert from her does not mean you are safe.** If you feel chest
+> pain or pressure, trouble breathing, numbness, fainting or anything frightening: call emergency services (997 in Saudi Arabia)
+> immediately. Don't ask her first.
+
+![She noticed an unusual heart rate and asks how you are — she never says you're fine](docs/images/companion_health.png)
+
+**Say it in words and she answers instantly, on this PC, before any AI is involved:** if you type or say things like “chest pain”,
+“I can't breathe”, “my arm is numb”, “I'm not okay”, she replies at once with *call your emergency number now*.
+
+| What | How it works |
+|---|---|
+| **Heart-rate / oxygen alerts** | Needs readings from your watch (see *Getting the data in*). Resting heart rate 120+ for several minutes, 160+ at rest, 40 or below, or oxygen 90% or below twice in a row → she asks if you're okay (answer “I'm fine” or “I'm not okay”). Oxygen 85% or below or 160+ at rest → urgent: she says to call emergency services and repeats every 5 minutes. Moving/exercising (steps) suppresses the resting alerts. |
+| **“How's my heart?”** | Latest readings and how old they are. Old or missing data is called what it is — *not* reassurance. |
+| **Messages & calls** | “Ali — WhatsApp”, “Missed call from Mum”. She does **not** read the message text unless you set `"read_message_text": true`. Several at once are batched into one sentence. |
+| **Reminders & birthdays** | “Remind me about Mum's birthday on 14 March every year” · “remind me on 24 October at 10 to call the embassy”. She speaks them at the time, and repeats yearly/monthly/weekly/daily if asked. “What are my reminders?” · deleting one asks first. |
+| **Notes** | “Take a note: ask Ali about the visa quota” · “what are my notes about visa?” (kept in `data\notes.jsonl`). |
+| **Break reminders** | If you stay in the **same app 90 minutes** (or on screens 2 hours) without stepping away, she says so and suggests what to do (stretch, water, rest your eyes) — on the PC (the window in front) and for phone apps you report. Stepping away from the keyboard for 5 minutes counts as a break. “How long have I been on screens today?” |
+| **Quiet hours** | 23:00–07:00 she holds back everything except urgent health alerts, then tells you how many things she held back. |
+
+![A break reminder](docs/images/companion_break.png)
+
+![Setting a birthday reminder](docs/images/companion_reminder.png)
+
+**Getting the data in — what works with your devices (Redmagic 12S Pro · iPhone 12 Pro Max · Galaxy Watch5 Pro):**
+- **Galaxy Watch5 Pro + iPhone: not possible.** Samsung's newer watches don't work with iOS, so the watch goes with the **Redmagic**
+  (Android) through Samsung's *Galaxy Wearable* app. Heart rate, sleep and blood oxygen work on a non-Samsung phone; Samsung's **ECG and
+  blood-pressure features need a Samsung phone**, so they will not be available with the Redmagic.
+- **The link:** run `python -m claire --link` once. It switches on a small receiver on your Wi-Fi and prints a secret address.
+  Anything that can send a small web request (POST, JSON) to it can feed her: on Android **Tasker**, **MacroDroid** or
+  **HTTP Shortcuts**; on iPhone the **Shortcuts** app (personal automations such as “when I get a message”, “when an app opens/closes”).
+  Examples: `{"type":"heart_rate","bpm":72}` · `{"type":"spo2","percent":97}` · `{"type":"notification","app":"WhatsApp","title":"Ali"}` ·
+  `{"type":"call","who":"Mum","kind":"missed"}` · `{"type":"app_usage","app":"Instagram","state":"opened"}` (and `"closed"`).
+  Open the address in the phone's browser first: it should say *link is working*.
+- **Honest limits:** I could not test this on your phone and watch. The part you must check is *getting heart rate out of the watch
+  automatically* — it depends on an app on the phone that can read Samsung Health / Health Connect and send a web request; I haven't
+  verified a specific app for that. iPhones (as far as I know) can't report phone calls, and Apple doesn't let any app read other apps'
+  notifications; Shortcuts can only react to some events. Anything not delivered to her, she can't see.
+- **Security:** the link is **off by default**; only devices on your private home network (192.168.x.x, 10.x.x.x, 172.16–31.x.x) with the
+  secret token can use it; 10 wrong guesses lock a device out for 10 minutes; only the event types above are accepted, 4 KB at most; she
+  never logs the address. When Windows asks about the firewall, allow **Private networks only**.
+- **Privacy:** health readings are stored only in `data\health.jsonl` on this PC (30 days), are never put into her prompts or memory, and
+  are only read when you ask “how's my heart?”. Delete the file any time.
+
+Settings (`settings.json`):
+```json
+"companion": {"enabled": true,
+              "link": {"enabled": true, "port": 8766, "token": "(made by --link)", "read_message_text": false},
+              "breaks": {"enabled": true, "same_app_minutes": 90, "continuous_minutes": 120},
+              "quiet_hours": ["23:00", "07:00"],
+              "notify_shortcut": ""}
+```
+`notify_shortcut` is optional: the name of one of your `tools.shortcuts` (e.g. a Tasker action that makes your phone or watch buzz). She
+runs it for urgent health alerts and break reminders, so you get them away from the PC.
 
 ## Your documents, with sources (new in v2.7 — Phase 5)
 She keeps a private index of the documents in the folders you allow (Documents, Downloads, Desktop by default). Ask about what is

@@ -29,6 +29,13 @@ DEFAULTS = {
         "ram_watch": True,                 # warn (once in a while) when memory runs high, and offer to close the biggest app
         "ram_warn_percent": 85,
     },
+    "companion": {                                           # phone/watch link, health alerts, reminders, break reminders
+        "enabled": True,
+        "link": {"enabled": False, "port": 8766, "token": "", "read_message_text": False},
+        "breaks": {"enabled": True, "same_app_minutes": 90, "continuous_minutes": 120},
+        "quiet_hours": ["23:00", "07:00"],
+        "notify_shortcut": "",
+    },
     "knowledge": {"folders": None, "extensions": None},      # Phase 5: None = the folders in tools.folders, all file types
     "voice": {
         "enabled": True,

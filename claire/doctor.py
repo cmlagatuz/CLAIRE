@@ -87,6 +87,14 @@ def checks(cfg=None):
             rows.append((FAIL, "Brain (Ollama)", "not running — start the Ollama app"))
     except Exception as e:
         rows.append((WARN, "Brain (Ollama)", f"couldn't check: {e}"))
+    from . import companion as _c
+    cc = _c.settings(cfg)
+    if not cc["enabled"]:
+        rows.append((WARN, "Companion (reminders, breaks, health)", "switched off in settings.json (companion → enabled)"))
+    elif cc["link"]["enabled"] and len(cc["link"]["token"]) >= 16:
+        rows.append((OK, "Phone link", f"on, port {cc['link']['port']} — run  python -m claire --link  to see the address"))
+    else:
+        rows.append((WARN, "Phone link", "off — reminders, notes and PC break reminders work; run  python -m claire --link  to connect your phone/watch"))
     t = cfg.get("tools", {})
     if not t.get("enabled", True):
         rows.append((WARN, "Her hands (tools)", "switched off in settings.json (tools → enabled)"))

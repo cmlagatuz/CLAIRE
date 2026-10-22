@@ -11,12 +11,16 @@ MAC = re.compile(r"\b([0-9a-f]{2}(?:[-:][0-9a-f]{2}){5})\b", re.I)
 IP = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 
 
+HOME = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
 def is_private(ip):
+    """Only the three ranges home routers hand out (RFC 1918). Not loopback, link-local, documentation or public."""
     try:
         a = ipaddress.ip_address(str(ip))
     except ValueError:
         return False
-    return a.is_private and not a.is_loopback and not a.is_multicast and not a.is_unspecified and not a.is_link_local
+    return a.version == 4 and any(a in n for n in HOME)
 
 
 def lan(ip):

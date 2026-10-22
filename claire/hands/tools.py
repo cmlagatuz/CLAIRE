@@ -73,6 +73,28 @@ SPECS = [
     {"name": "index_documents", "ask": False,
      "description": "Refresh my index of the user's documents (new and changed files only).",
      "properties": {}, "required": []},
+    {"name": "health_status", "ask": False,
+     "description": "The latest readings from the user's watch (heart rate, blood oxygen) and how old they are.",
+     "properties": {}, "required": []},
+    {"name": "add_reminder", "ask": False,
+     "description": "Remind the user at a date/time (birthdays, appointments). 'when' is YYYY-MM-DD or YYYY-MM-DDTHH:MM "
+                    "(work it out from today's date); 'repeat' is none, daily, weekly, monthly or yearly (yearly for birthdays).",
+     "properties": {"text": {"type": "string"}, "when": {"type": "string"},
+                    "repeat": {"type": "string", "enum": ["none", "daily", "weekly", "monthly", "yearly"]}},
+     "required": ["text", "when"]},
+    {"name": "list_reminders", "ask": False,
+     "description": "Show the user's upcoming reminders.", "properties": {}, "required": []},
+    {"name": "remove_reminder", "ask": True,
+     "description": "Delete one reminder by its number. Asks first.",
+     "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+    {"name": "take_note", "ask": False,
+     "description": "Write down a note for the user.",
+     "properties": {"text": {"type": "string"}}, "required": ["text"]},
+    {"name": "list_notes", "ask": False,
+     "description": "Show the user's latest notes, or search them.",
+     "properties": {"query": {"type": "string"}}, "required": []},
+    {"name": "screen_time", "ask": False,
+     "description": "How long the user has used apps today (this PC and phone).", "properties": {}, "required": []},
     {"name": "find_files", "ask": False,
      "description": "Search file and folder names in the user's Documents, Downloads and Desktop. Does not open anything.",
      "properties": {"query": {"type": "string", "description": "words from the file name"}}, "required": ["query"]},
@@ -97,6 +119,7 @@ GROUPS = {   # which tools are shown to the model for which kind of request (19+
     "self": ("read_own_file", "propose_change", "show_change", "apply_change", "undo_change"),
     "devices": ("network_map", "network_trust", "phone_status", "phone_connect", "phone_open_app", "run_shortcut"),
     "docs": ("search_documents", "index_documents"),
+    "life": ("health_status", "add_reminder", "list_reminders", "remove_reminder", "take_note", "list_notes", "screen_time"),
 }
 NO_ALWAYS = {"apply_change", "undo_change", "close_program"}     # these are asked every single time, whatever you say
 
@@ -137,6 +160,7 @@ class Hands:
         self.selfedit = selfedit.SelfEdit(root or _config.ROOT, cfg["data_dir"], runner or selfedit.run_tests)
         from ..knowledge import Knowledge
         self.knowledge = Knowledge(cfg)
+        self.companion = None                                  # set by the window / terminal (Phase 4.8)
         self.persist = None                                    # called with (key, value) to save a setting
         self.on_done = None                                    # called after an action really happened
         self.on_change = None                                  # called when the pending list changes
@@ -295,6 +319,30 @@ class Hands:
             return "Search your documents"
         if name == "index_documents":
             return "Refresh my index of your documents"
+        if name in ("health_status", "list_reminders", "list_notes", "screen_time", "take_note", "add_reminder",
+                    "remove_reminder"):
+            if not self.companion:
+                raise Refused("My companion features aren't running right now.")
+            if name == "add_reminder":
+                from .. import reminders as _r
+                try:
+                    _r.parse_when(args.get("when"), self.companion.now())
+                except _r.Refused as e:
+                    raise Refused(str(e))
+                return "Set a reminder"
+            if name == "remove_reminder":
+                ids = {r["id"]: r for r in self.companion.reminders._load()}
+                try:
+                    rid = int(args.get("id"))
+                except (TypeError, ValueError):
+                    raise Refused("Which reminder number?")
+                if rid not in ids:
+                    raise Refused("I don't have a reminder with that number.")
+                args["id"] = rid
+                return f"Delete the reminder “{ids[rid]['text']}”"
+            if name == "take_note" and not str(args.get("text", "")).strip():
+                raise Refused("What should I write down?")
+            return "Look at your life stats"
         if name == "find_files":
             if not self.allowed():
                 raise Refused("None of my allowed folders exist. Set them in settings.json under tools.folders.")
@@ -454,6 +502,46 @@ class Hands:
 
     def _do_index_documents(self, a):
         return self.knowledge.update().describe()
+
+    def _do_health_status(self, a):
+        return self.companion.vitals.status()
+
+    def _do_add_reminder(self, a):
+        from .. import reminders as _r
+        try:
+            r = self.companion.reminders.add(a.get("text"), a.get("when"), a.get("repeat", "none"))
+        except _r.Refused as e:
+            raise Refused(str(e))
+        d = datetime.fromisoformat(r["due"])
+        return f"Okay, I'll remind you on {d:%A %d %B %Y} at {d:%H:%M}" + (f" (repeating {r['repeat']})" if r["repeat"] != "none" else "") + f". [#{r['id']}]"
+
+    def _do_list_reminders(self, a):
+        items = self.companion.reminders.upcoming(400)
+        if not items:
+            return "You have no upcoming reminders."
+        return "Your reminders:\n" + "\n".join(
+            f"#{i['id']} {datetime.fromisoformat(i['due']):%d %b %Y %H:%M} — {i['text']}" + (f" ({i['repeat']})" if i["repeat"] != "none" else "")
+            for i in items[:20])
+
+    def _do_remove_reminder(self, a):
+        self.companion.reminders.remove(a["id"])
+        return f"Deleted reminder #{a['id']}."
+
+    def _do_take_note(self, a):
+        from .. import reminders as _r
+        try:
+            self.companion.reminders.note(a.get("text"))
+        except _r.Refused as e:
+            raise Refused(str(e))
+        return "Noted."
+
+    def _do_list_notes(self, a):
+        rows = self.companion.reminders.recent_notes(10, a.get("query", ""))
+        return "Your notes:\n" + "\n".join(f"{r['at'][:16]} — {r['text']}" for r in rows) if rows else "I don't have any notes yet."
+
+    def _do_screen_time(self, a):
+        c = self.companion
+        return " ".join(x for x in (c.usage.summary(), c.phone_usage.summary() if c.phone_usage.today else "") if x)
 
     def _do_find_files(self, a):
         found = files.find(a.get("query"), self.allowed())

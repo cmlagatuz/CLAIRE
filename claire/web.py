@@ -68,6 +68,9 @@ class WebSession:
         self.chooser = VoiceChooser(self.app.vk, self._say, self.app.user, self.app.c.milestone)
         self.vc = self.chooser.ctl
         self.hands = self.app.c.hands or hands_mod.attach(self.app.c, config.save_setting)
+        self.companion = getattr(self.app, "companion", None)
+        if self.companion:
+            self.companion._say = self._alert
         if self.hands:
             self.hands.on_change = lambda: self.hub.publish("pending", items=self.hands.pending())
 
@@ -116,6 +119,8 @@ class WebSession:
         except Exception as e:
             self.hub.publish("error", text=f"Start-up problem: {e}")
             self.start_ram_watch()
+            if self.companion:
+                self.companion.start()
         finally:
             signals.activity = "idle"
 
@@ -144,15 +149,24 @@ class WebSession:
             finally:
                 signals.activity = "idle"
 
-    def _say(self, text, speak=True):
+    def _say(self, text, speak=True, urgent=False):
         vk = self.app.vk
         self.hub.publish("claire", text=text)
-        if speak and vk.mode != "off" and vk.speaker:
+        if speak and (vk.mode != "off" or urgent) and vk.speaker:
             vk.speaker.say(text)
+
+    def _alert(self, text, urgent=False):
+        """Things she says on her own: reminders, phone events, health alerts, break reminders."""
+        self._say(text, urgent=urgent)
 
     def _answer(self, text, spoken):
         a, vk, c = self.app, self.app.vk, self.app.c
         sp = vk.speaker
+        if self.companion:
+            ans = self.companion.answer(text)            # emergency words come first, locally, before any AI
+            if ans:
+                self._say(ans, urgent=True)
+                return True
         if HUSH.match(text):
             if sp:
                 sp.stop()
@@ -412,6 +426,8 @@ class WebSession:
         return res["status"] in ("done", "denied")
 
     def close(self):
+        if self.companion:
+            self.companion.stop()
         if getattr(self, "watch", None):
             self.watch.stop()
         if self.hf_stop:

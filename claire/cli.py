@@ -5,7 +5,7 @@ import re
 import sys
 import threading
 
-from . import __version__, config, hands
+from . import __version__, companion, config, hands
 from .brain import BrainOffline
 from .core import Claire
 from .voice import EDGE_VOICES, KOKORO_VOICES, SentenceBuffer, VoiceKit
@@ -44,6 +44,7 @@ class App:
     def __init__(self):
         self.c = Claire()
         hands.attach(self.c, config.save_setting)
+        self.companion = companion.build(self.c, self.alert)
         self.vk = VoiceKit(self.c.cfg, config.ROOT)
         self.user = self.c.cfg["user_name"]
 
@@ -51,6 +52,13 @@ class App:
         print(f"{P}Claire ›{D} {text}")
         if speak and self.vk.mode != "off" and self.vk.speaker:
             self.vk.speaker.say(text)
+
+    def alert(self, text, urgent=False):
+        """Things she says on her own (reminders, phone events, health alerts, breaks)."""
+        print(f"\n{P}Claire ›{D} {text}")
+        sp = self.vk.speaker
+        if sp and (self.vk.mode != "off" or urgent):
+            sp.say(text)
 
     @property
     def chooser(self):
@@ -69,6 +77,12 @@ class App:
     def handle(self, text, spoken=False):
         """Returns False when the hands-free loop should stop."""
         sp = self.vk.speaker
+        comp = getattr(self, "companion", None)
+        if comp:
+            ans = comp.answer(text)                      # emergency words come first, locally, before any AI
+            if ans:
+                self.alert(ans, urgent=True)
+                return True
         if HUSH.match(text):
             if sp:
                 sp.stop()
@@ -281,6 +295,8 @@ class App:
             for _, facts in c.recover():
                 if facts:
                     print(f"{G}(From our last chat I learned: {'; '.join(facts)}){D}")
+        if self.companion:
+            self.companion.start()
         while True:
             try:
                 text = input(f"\n{G}{self.user} ›{D} ").strip()

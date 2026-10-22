@@ -119,3 +119,43 @@ class Platform:
         req = urllib.request.Request(url, headers={"User-Agent": "CLAIRE"})
         with urllib.request.urlopen(req, timeout=6) as r:
             return r.status
+
+    # ---- Phase 4.8: what is in front of you, and are you at the keyboard? ----------------------------------------
+    def foreground_app(self):
+        """The program whose window is in front (Windows). None when unknown."""
+        if not self.windows:
+            return None
+        import ctypes
+        from ctypes import wintypes
+        u, k = ctypes.windll.user32, ctypes.windll.kernel32
+        hwnd = u.GetForegroundWindow()
+        if not hwnd:
+            return None
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        h = k.OpenProcess(0x1000, False, pid.value)                 # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return None
+        try:
+            buf, n = ctypes.create_unicode_buffer(520), wintypes.DWORD(520)
+            if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                return buf.value.rsplit("\\", 1)[-1]
+        finally:
+            k.CloseHandle(h)
+        return None
+
+    def idle_seconds(self):
+        """Seconds since your last key press or mouse move (Windows). 0 when unknown."""
+        if not self.windows:
+            return 0.0
+        import ctypes
+        from ctypes import wintypes
+
+        class LII(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+        info = LII()
+        info.cbSize = ctypes.sizeof(LII)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+            return 0.0
+        ctypes.windll.kernel32.GetTickCount.restype = wintypes.DWORD
+        return max(0.0, (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000.0)
