@@ -30,6 +30,8 @@ class RamWatch:
             res = self.hands.call("close_program", {"name": pick["name"]})
             if res["status"] == "pending":
                 text += f" Want me to close {procs.key(pick['name']).title()}? It's the biggest one I'm allowed to close."
+            elif res["status"] == "done":
+                text += f" {res['text']}"                   # one Carl put on his own auto-close list
         self.hands.log("warned", "ram_watch", {"percent": round(pct)}, text)
         self.say(text)
         return text

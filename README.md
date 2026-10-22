@@ -1,4 +1,4 @@
-# C.L.A.I.R.E. — v2.6.1 · Phase 4 (Hands)
+# C.L.A.I.R.E. — v2.6.2 · Phase 4 (Hands)
 Personal AI assistant core by Lagatuz Labs. Runs on your PC. No fees.
 
 ![C.L.A.I.R.E.'s window: a living network of light, with a question card asking permission](docs/images/hands_ask.png)
@@ -104,6 +104,10 @@ You asked for her to take much more control. She now has it, with one rule that 
   `claire/cli.py`, `claire/config.py`, the safety tests, `settings.json`, your `data` folder, and every `.bat` launcher.
   A change that makes any test fail is rejected automatically. Changes take effect after you restart her.
   Backups are in `data\backups`, proposals in `data\proposals`, and everything is in the Actions log.
+- **Closing programs takes one question, not several.** She no longer asks "are you sure?" in words on top of the Yes/No card, and
+  loose names work ("close chrome", "close my browser"). To skip the question for programs you trust, list them yourself in
+  settings.json: `"tools": {"auto_close": ["chrome"]}` — only you can add to that list; she can't, and system programs, Python and
+  Ollama are ignored even if listed.
 - Turn the memory watcher off or change its level: `"tools": {"ram_watch": true, "ram_warn_percent": 85}`.
 
 **Not built (on purpose):** taking over or disconnecting *other* devices on your network, and acting with no approval at all.

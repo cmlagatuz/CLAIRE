@@ -118,6 +118,10 @@ class Hands:
             "parameters": {"type": "object", "properties": s["properties"], "required": s["required"]}}}
             for s in SPECS] if self.enabled else []
 
+    def auto_close(self):
+        """Programs Carl listed in settings.json (tools.auto_close) that she may close without asking. Only he can add to it."""
+        return {procs.key(n) for n in self.t.get("auto_close", []) if isinstance(n, str) and not procs.protected(n)}
+
     def allowed(self):
         return files.roots(self.t.get("folders"))
 
@@ -160,7 +164,7 @@ class Hands:
             return {"status": "error", "text": str(e)}
         if not spec["ask"]:
             return self._run(name, args, what)
-        if name in self.always:
+        if name in self.always or (name == "close_program" and procs.key(args.get("name")) in self.auto_close()):
             return self._run(name, args, what)
         with self._lock:
             self._expire()
@@ -191,9 +195,11 @@ class Hands:
                 raise Refused("That isn't a program name I can use.")
             if procs.protected(n):
                 raise Refused(f"{procs.key(n).title()} is part of Windows or part of me — I never close those.")
-            g = [e for e in procs.group(self.platform.list_processes()) if procs.key(e["name"]) == procs.key(n)]
+            g = procs.resolve(procs.group(self.platform.list_processes()), n)
             if not g:
                 raise Refused(f"I don't see {n} running.")
+            if procs.protected(g[0]["name"]):
+                raise Refused(f"{procs.key(g[0]['name']).title()} is part of Windows or part of me — I never close those.")
             args["name"] = g[0]["name"]
             return (f"Close {procs.key(g[0]['name']).title()} ({g[0]['count']} process{'es' if g[0]['count'] != 1 else ''}, "
                     f"{procs.size(g[0]['mb'])}) — unsaved work in it could be lost")

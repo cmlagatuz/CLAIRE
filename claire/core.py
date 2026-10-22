@@ -35,6 +35,9 @@ HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files
               "You can read your own code and prepare a tested change to it (propose_change); it only takes effect "
               "after the user approves apply_change. You cannot edit your safety rules. "
               "You cannot delete, send, install or run commands; if asked, say you can't do that. "
+              "NEVER ask the user for permission or confirmation yourself ('are you sure?', 'shall I?') and never ask which "
+              "program he means when one name fits: just call the tool — the system shows him a single Yes/No question. "
+              "After calling a tool that is waiting for his yes, say one short sentence and stop. "
               "Never claim an action happened unless a tool result says it did.")
 
 # Only messages that sound like a PC action get the tools (and their long instructions). Everything else is a plain,

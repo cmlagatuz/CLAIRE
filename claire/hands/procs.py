@@ -97,3 +97,22 @@ def closable(groups, min_mb=300):
         if not e["protected"] and e["mb"] >= min_mb:
             return e
     return None
+
+
+BROWSERS = ("chrome", "msedge", "edge", "firefox", "brave", "opera", "vivaldi")
+
+
+def resolve(groups, wanted):
+    """The running program(s) the user most likely means: exact name, else a part of a name ("chrome" → "chrome.exe"),
+    else "browser" → the biggest browser that is running."""
+    w = key(wanted)
+    if not w:
+        return []
+    exact = [e for e in groups if key(e["name"]) == w]
+    if exact:
+        return exact
+    if w in ("browser", "web browser", "my browser", "the browser"):
+        b = [e for e in groups if key(e["name"]) in BROWSERS]
+        return b[:1]
+    part = [e for e in groups if len(w) >= 3 and w in key(e["name"])]
+    return part[:1] if len({key(e["name"]) for e in part}) == 1 else []

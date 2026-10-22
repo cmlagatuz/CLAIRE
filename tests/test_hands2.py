@@ -313,3 +313,43 @@ class SeeBeforeYouApprove(unittest.TestCase):
         html = (Path(__file__).resolve().parent.parent / "claire" / "ui" / "orb.html").read_text(encoding="utf-8")
         self.assertIn("asking.detail", html)
         self.assertNotIn("innerHTML", html)
+
+
+class FewerQuestions(unittest.TestCase):
+    def setUp(self):
+        self.h, self.pc = hands_for(mini_repo(), lambda t: (True, "ok"))
+
+    def test_loose_names_still_find_the_right_program(self):
+        for said in ("chrome", "Chrome.exe", "chro", "my browser", "browser"):
+            r = self.h.call("close_program", {"name": said})
+            self.assertEqual(r["status"], "pending", said)
+            self.assertIn("Close Chrome", self.h.pending()[-1]["what"])
+            self.h.deny(r["id"])
+        self.assertEqual(self.pc.did, [])
+
+    def test_ambiguous_or_protected_loose_names_are_not_guessed(self):
+        self.pc.procs = self.pc.procs + [{"name": "chromium.exe", "pid": 50, "mb": 500.0}]
+        self.assertEqual(self.h.call("close_program", {"name": "chro"})["status"], "error")   # chrome AND chromium
+        self.assertEqual(self.h.call("close_program", {"name": "svc"})["status"], "error")
+        self.assertEqual(self.h.call("close_program", {"name": "ol"})["status"], "error")
+        self.assertEqual(self.pc.did, [])
+
+    def test_auto_close_list_skips_the_question_for_those_programs_only(self):
+        self.h.t["auto_close"] = ["Chrome.exe", "svchost", "python", 7]
+        r = self.h.call("close_program", {"name": "chrome"})
+        self.assertEqual((r["status"], self.pc.did), ("done", [("close", "chrome.exe")]))
+        self.assertEqual(self.h.call("close_program", {"name": "code"})["status"], "pending")   # not on his list
+        self.assertEqual(self.h.auto_close(), {"chrome"})                                       # protected ones never count
+        self.assertEqual(self.h.call("close_program", {"name": "svchost"})["status"], "error")
+
+    def test_the_model_is_told_not_to_ask_on_top_of_the_card(self):
+        from claire.core import HANDS_RULE
+        self.assertIn("NEVER ask the user for permission", HANDS_RULE)
+
+    def test_watch_says_so_when_it_closed_an_auto_close_program(self):
+        self.h.t["auto_close"] = ["chrome"]
+        said = []
+        w = RamWatch(self.h, said.append, reader=lambda: {"mem_total": 100, "mem_free": 5}, clock=lambda: 1.0)
+        text = w.check()
+        self.assertIn("I asked Chrome to close.", text)
+        self.assertNotIn("Want me to", text)
