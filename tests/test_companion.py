@@ -557,19 +557,46 @@ class ThroughTheTools(unittest.TestCase):
 
 
 class SetupCommand(unittest.TestCase):
-    def test_link_setup_makes_a_strong_token_and_prints_the_address(self):
+    def run_setup(self, ips=("192.168.1.10", "172.20.0.1")):
         saved = {}
+        buf = io.StringIO()
         with mock.patch.object(config, "save_setting", lambda k, v, *a: saved.__setitem__(k, v)), \
-                mock.patch("claire.hands.platform.Platform.local_ip", lambda s: "192.168.1.10"), \
-                mock.patch.object(config, "load", lambda *a: json.loads(json.dumps(config.DEFAULTS))):
-            buf = io.StringIO()
-            with redirect_stdout(buf):
-                companion.setup_link()
+                mock.patch("claire.hands.platform.Platform.addresses", lambda s: list(ips)), \
+                mock.patch.object(config, "load", lambda *a: json.loads(json.dumps(config.DEFAULTS))), \
+                mock.patch.object(companion, "start_test_server", side_effect=OSError("in use")), redirect_stdout(buf):
+            companion.setup_link()
+        return saved, buf.getvalue()
+
+    def test_link_setup_makes_a_strong_token_and_lists_every_address(self):
+        saved, out = self.run_setup()
         self.assertTrue(saved["companion.link.enabled"])
-        self.assertGreaterEqual(len(saved["companion.link.token"]), 24)
-        out = buf.getvalue()
-        self.assertIn(f"http://192.168.1.10:8766/e/{saved['companion.link.token']}", out)
-        self.assertIn("PRIVATE", out)
+        tok = saved["companion.link.token"]
+        self.assertGreaterEqual(len(tok), 24)
+        self.assertIn(f"http://192.168.1.10:8766/e/{tok}", out)
+        self.assertIn(f"http://172.20.0.1:8766/e/{tok}", out)             # a VPN/virtual adapter may be the wrong one
+        self.assertIn("already in use", out)
+
+    def test_the_timeout_help_names_the_real_causes(self):
+        _, out = self.run_setup()
+        for needle in ("took too long", "same Wi-Fi", "netsh advfirewall", "localport=8766", "PRIVATE", "127.0.0.1"):
+            self.assertIn(needle, out)
+
+    def test_test_mode_receives_and_prints_events(self):
+        lines = []
+        srv = companion.start_test_server("k" * 24, 0, out=lines.append)
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
+            c.request("POST", "/e/" + "k" * 24, body=json.dumps({"type": "heart_rate", "bpm": 72}),
+                      headers={"Content-Type": "application/json"})
+            self.assertEqual(c.getresponse().status, 200)
+            c.close()
+        finally:
+            srv.stop()
+        self.assertEqual(lines, ["   received: type=heart_rate, bpm=72.0"])
+
+    def test_the_window_lets_this_pc_test_its_own_link(self):
+        src = Path(companion.__file__).read_text(encoding="utf-8")
+        self.assertIn("allow_loopback=True", src)
 
     def test_defaults_are_safe(self):
         d = config.DEFAULTS["companion"]

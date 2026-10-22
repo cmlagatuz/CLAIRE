@@ -187,7 +187,7 @@ nudge you to take a break, and raise the alarm when readings from your watch loo
 - **Galaxy Watch5 Pro + iPhone: not possible.** Samsung's newer watches don't work with iOS, so the watch goes with the **Redmagic**
   (Android) through Samsung's *Galaxy Wearable* app. Heart rate, sleep and blood oxygen work on a non-Samsung phone; Samsung's **ECG and
   blood-pressure features need a Samsung phone**, so they will not be available with the Redmagic.
-- **The link:** double-click **link.bat** once (or run `python -m claire --link` inside `D:\CLAIRE`, using her own Python). It switches on a small receiver on your Wi-Fi and prints a secret address.
+- **The link:** double-click **link.bat** once (or run `python -m claire --link` inside `D:\CLAIRE`, using her own Python). It switches on the link, lists the secret address(es) of this PC, and stays open in *test mode* so you can see what your phone sends. **If the phone says “took too long to respond”**: same Wi-Fi (not mobile data, guest Wi-Fi or a VPN), set the Wi-Fi to *Private*, allow it once in the firewall (link.bat prints the exact `netsh` command to run in an Administrator PowerShell), and try each address it lists.
   Anything that can send a small web request (POST, JSON) to it can feed her: on Android **Tasker**, **MacroDroid** or
   **HTTP Shortcuts**; on iPhone the **Shortcuts** app (personal automations such as “when I get a message”, “when an app opens/closes”).
   Examples: `{"type":"heart_rate","bpm":72}` · `{"type":"spo2","percent":97}` · `{"type":"notification","app":"WhatsApp","title":"Ali"}` ·

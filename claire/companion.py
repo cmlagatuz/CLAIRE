@@ -173,7 +173,8 @@ class Companion:
         lk = self.c["link"]
         if lk.get("enabled") and not self.server:
             try:
-                self.server = link.LinkServer(lk["token"], self.handle_event, port=int(lk.get("port", 8766)))
+                self.server = link.LinkServer(lk["token"], self.handle_event, port=int(lk.get("port", 8766)),
+                                              allow_loopback=True)                        # this PC itself may test it
                 self.server.start()
             except (OSError, ValueError) as e:
                 self._say(f"My phone link couldn't start: {e}", False)
@@ -212,8 +213,17 @@ def build(claire, say, platform=None):
     return comp
 
 
+def start_test_server(token, port, out=print):
+    """The link, running on its own so you can test it before (or without) opening her window. Prints what arrives."""
+    def show(ev):
+        out("   received: " + ", ".join(f"{k}={v}" for k, v in ev.items()))
+    srv = link.LinkServer(token, show, port=int(port), allow_loopback=True)
+    srv.start()
+    return srv
+
+
 def setup_link():
-    """python -m claire --link : switch the phone link on, make a secret token, and print how to use it."""
+    """link.bat : switch the phone link on, make a secret token, print the address(es), and listen so you can test it."""
     from . import config
     from .hands.platform import Platform
     cfg = config.load()
@@ -221,28 +231,44 @@ def setup_link():
     token = lk["token"] if len(lk.get("token", "")) >= 16 else new_token()
     config.save_setting("companion.link.enabled", True)
     config.save_setting("companion.link.token", token)
-    try:
-        ip = Platform().local_ip()
-    except OSError:
-        ip = "<this PC's address>"
-    port = lk.get("port", 8766)
-    base = f"http://{ip}:{port}/e/{token}"
+    port = int(lk.get("port", 8766))
+    ips = Platform().addresses() or ["<this PC's address>"]
     print(f"""
 === C.L.A.I.R.E. phone link ===
-The link is switched ON (restart her window to start it). Windows may ask to allow Python through the firewall:
-choose PRIVATE networks only.
+The link is switched ON. Keep the address below secret, like a password.
 
-  Address for your phone/watch automations (keep it secret, like a password):
-      {base}
+  Addresses to try on your phone (same Wi-Fi). A PC can have several; the first is the most likely:""")
+    for ip in ips:
+        print(f"      http://{ip}:{port}/e/{token}")
+    print(f"""
+  1. Open one of them in the PHONE's browser. It should say "link is working".
+  2. If it says "took too long to respond":
+       - the phone must be on the same Wi-Fi as this PC (not mobile data, not a guest network, no VPN);
+       - Windows Firewall must allow it. Open PowerShell AS ADMINISTRATOR once and run:
+           netsh advfirewall firewall add rule name="CLAIRE link" dir=in action=allow protocol=TCP localport={port} profile=private
+       - the Wi-Fi must be set to a PRIVATE network (Settings > Network > Wi-Fi > your network > Private);
+       - try the next address in the list above.
+  3. To test from this PC first, open the same address with 127.0.0.1 instead of the number.
 
-  Test in your phone's browser (same Wi-Fi):   open that address — it should say "link is working".
-  Send an event (POST, JSON body) to the same address, for example:
-      {{"type": "heart_rate", "bpm": 72}}
-      {{"type": "spo2", "percent": 97}}
+  Events to send (POST, JSON), for example:
+      {{"type": "heart_rate", "bpm": 72}}   {{"type": "spo2", "percent": 97}}
       {{"type": "notification", "app": "WhatsApp", "title": "Ali"}}
       {{"type": "call", "who": "Mum", "kind": "missed"}}
       {{"type": "app_usage", "app": "Instagram", "state": "opened"}}   (and "closed")
 
-  Only devices on your private network can use it. If the address ever leaks, run this command again after
-  deleting "token" from settings.json to get a new one.
+  If the address ever leaks: delete "token" under companion > link in settings.json, then run link.bat again.
 """)
+    try:
+        srv = start_test_server(token, port)
+    except OSError:
+        print(f"  (Port {port} is already in use — the link is probably already running inside her window. That is fine:\n"
+              "   test the address above from the phone.)")
+        return
+    print(f"  TEST MODE: listening on port {port} now. Open the address on your phone; anything it sends appears below.")
+    print("  Press Ctrl+C to stop. (When her window is open it runs the link itself, so close this first.)\n")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        srv.stop()
+        print("  Stopped.")

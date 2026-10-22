@@ -78,6 +78,25 @@ class Platform:
         finally:
             s.close()
 
+    def addresses(self):
+        """Every home-network address this PC has (a PC can have several: Wi-Fi, Ethernet, VPN, WSL…)."""
+        import socket
+        from . import net
+        found = []
+        try:
+            found.append(self.local_ip())
+        except OSError:
+            pass
+        try:
+            found += socket.gethostbyname_ex(socket.gethostname())[2]
+        except OSError:
+            pass
+        out = []
+        for ip in found:
+            if net.is_private(ip) and ip not in out:
+                out.append(ip)
+        return out
+
     def arp_table(self, sweep_net=None):
         """Wake the devices on a /24 with one quick ping each, then read the ARP table."""
         from concurrent.futures import ThreadPoolExecutor
