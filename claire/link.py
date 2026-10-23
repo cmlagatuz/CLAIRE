@@ -75,12 +75,17 @@ def _when(v):
         return None
 
 
+def is_batch(body):
+    """The Health Connect Webhook app's payload: no "type", but a timestamp / app_version or lists of readings."""
+    return isinstance(body, dict) and "type" not in body and any(
+        k in body for k in ("app_version", "heart_rate", "oxygen_saturation", "steps"))
+
+
 def expand(body, now):
     """Understands the "Health Connect Webhook" app's batches: {"heart_rate": [{"bpm", "time"}], "oxygen_saturation":
     [{"percentage", "time"}], "steps": [{"count", "time"}]} → separate clean events, each with its real time.
-    Anything else is returned unchanged. Old or future-dated readings are dropped."""
-    if not isinstance(body, dict) or "type" in body or not any(
-            isinstance(body.get(k), list) for k in ("heart_rate", "oxygen_saturation", "steps")):
+    Anything else is returned unchanged. Old or future-dated readings are dropped; data types she doesn't use are ignored."""
+    if not is_batch(body):
         return [body]
     out = []
     for key, kind, field, name in (("heart_rate", "heart_rate", "bpm", "bpm"), ("oxygen_saturation", "spo2", "percentage", "percent"),
@@ -198,7 +203,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(413 if n > MAX_BODY else 400, {"error": f"send 1 to {MAX_BODY} bytes of JSON"})
         try:
             body = json.loads(self.rfile.read(n).decode("utf-8"))
-            events = [validate(e) for e in expand(body, self.server.clock())]
+            events = []
+            for e in expand(body, self.server.clock()):
+                try:
+                    events.append(validate(e))
+                except ValueError:
+                    if not is_batch(body):                  # one bad reading in a big batch must not fail the whole sync
+                        raise
         except (ValueError, UnicodeDecodeError) as e:
             return self._reply(400, {"error": str(e)})
         try:

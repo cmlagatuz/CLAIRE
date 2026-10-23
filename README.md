@@ -227,6 +227,12 @@ must be on the same Wi-Fi as the PC.
    `application/json`) to the same address, with a body like `{"type":"notification","app":"WhatsApp","title":"Ali"}`,
    `{"type":"call","who":"Mum","kind":"missed"}` or `{"type":"app_usage","app":"Instagram","state":"opened"}`.
 
+**Urgent alerts are loud.** Before an urgent health alert she turns the PC volume up, says it, and asks whether to open
+your phone's dialer with the emergency number ready (set `companion.emergency_number`, default `997`; switch the volume
+rise off with `companion.loud_alerts: false`). Say "yes" and she opens the dialer over ADB — **she never places the
+call herself, you press call**. If the phone isn't connected over ADB she says so and tells you to dial it yourself.
+The same offer follows you saying "chest pain", "I'm not okay" and the other emergency words.
+
 Honest limits: heart rate reaches her only as fast as Samsung Health syncs the watch to the phone and the app sends it
 (minutes, not seconds), so this is a watchful companion, **not** a medical alarm. If you feel unwell, call your local
 emergency number (997 in Saudi Arabia) — do not wait for her.

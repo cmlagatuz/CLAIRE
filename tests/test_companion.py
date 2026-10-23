@@ -277,10 +277,13 @@ class Server(unittest.TestCase):
         got = [(e["type"], e.get("bpm", e.get("percent")), round(now - e["at"])) for e in self.events]
         self.assertEqual(got, [("heart_rate", 80.0, 600), ("heart_rate", 90.0, 60), ("spo2", 97.0, 30)])
 
-    def test_batch_with_an_impossible_value_is_refused_whole(self):
+    def test_a_bad_reading_or_unused_data_never_fails_the_whole_sync(self):
         iso = datetime.utcfromtimestamp(self.clock() - 5).strftime("%Y-%m-%dT%H:%M:%SZ")
-        self.assertEqual(self.call(body={"heart_rate": [{"bpm": 999, "time": iso}]})[0], 400)
-        self.assertEqual(self.events, [])
+        self.assertEqual(self.call(body={"heart_rate": [{"bpm": 999, "time": iso}, {"bpm": 70, "time": iso}]})[0], 200)
+        self.assertEqual([e["bpm"] for e in self.events], [70.0])
+        self.assertEqual(self.call(body={"timestamp": iso, "app_version": "1", "sleep": [{"x": 1}]})[0], 200)
+        self.assertEqual(len(self.events), 1)
+        self.assertEqual(self.call(body={"heart_rate_bogus": 1})[0], 400)           # not a batch → still strict
 
     def test_token_in_path_header_or_query(self):
         self.assertEqual(self.call(path="/x", headers={"X-Claire-Link": TOKEN}, body={"type": "ping"})[0], 200)
@@ -391,6 +394,46 @@ class Phone(unittest.TestCase):
         self.assertEqual(pc.shortcuts_hit, ["http://192.168.1.50:8080/alert"])
         self.assertEqual(comp.answer("I have chest pain"), health.EMERGENCY_REPLY)
         self.assertEqual(len(pc.shortcuts_hit), 2)
+
+
+class Dialer(unittest.TestCase):
+    def test_urgent_alert_is_loud_and_offers_the_dialer_and_yes_opens_it_without_calling(self):
+        comp, clock, said, now, pc, cfg = make()
+        pc.adb_out = {"shell am start": (0, "Starting: Intent { act=android.intent.action.DIAL dat=tel:997 }")}
+        pc.adb_log = []
+        comp.handle_event({"type": "heart_rate", "bpm": 175.0})
+        self.assertIn(("volume", "up", 25), pc.did)
+        self.assertIn("Say yes", said[0][0])
+        reply = comp.answer("yes")
+        self.assertIn("997", reply)
+        self.assertEqual(pc.adb_log[-1], ["shell", "am", "start", "-a", "android.intent.action.DIAL", "-d", "tel:997"])
+        self.assertNotIn("CALL", " ".join(pc.adb_log[-1]).replace("DIAL", ""))      # never places the call itself
+        self.assertIsNone(comp.answer("yes"))                                      # the offer is used up
+
+    def test_without_the_phone_connected_she_tells_you_to_dial_yourself(self):
+        comp, clock, said, now, pc, cfg = make()
+        pc.adb_out = None
+        comp.answer("I have chest pain")
+        self.assertIn("dial 997 yourself", comp.answer("yes please"))
+
+    def test_no_or_a_stale_offer_does_nothing_and_a_yes_to_other_talk_is_ignored(self):
+        comp, clock, said, now, pc, cfg = make()
+        pc.adb_log = []
+        self.assertIsNone(comp.answer("yes"))                                      # no offer yet
+        comp.answer("I have chest pain")
+        self.assertIn("emergency number", comp.answer("no"))
+        comp.answer("I have chest pain")
+        clock.adv(1000)
+        self.assertIsNone(comp.answer("yes"))
+        self.assertEqual(pc.adb_log, [])
+
+    def test_loud_alerts_can_be_switched_off_and_the_number_is_checked(self):
+        comp, clock, said, now, pc, cfg = make(loud_alerts=False, emergency_number="9;rm -rf")
+        pc.adb_out, pc.adb_log = {}, []
+        comp.handle_event({"type": "heart_rate", "bpm": 175.0})
+        self.assertNotIn(("volume", "up", 25), pc.did)
+        comp.answer("yes")
+        self.assertEqual(pc.adb_log[-1][-1], "tel:997")
 
 
 class Breaks(unittest.TestCase):

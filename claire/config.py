@@ -35,6 +35,8 @@ DEFAULTS = {
         "breaks": {"enabled": True, "same_app_minutes": 90, "continuous_minutes": 120},
         "quiet_hours": ["23:00", "07:00"],
         "notify_shortcut": "",
+        "emergency_number": "997",
+        "loud_alerts": True,
     },
     "knowledge": {"folders": None, "extensions": None},      # Phase 5: None = the folders in tools.folders, all file types
     "voice": {

@@ -1,6 +1,7 @@
 """Her companion side: events from your phone and watch, health alerts, reminders, notes and break reminders — all
 in one place so the window and the terminal behave the same."""
 import json
+import re
 import secrets
 import threading
 import time
@@ -15,7 +16,11 @@ DEFAULTS = {
     "breaks": {"enabled": True, "same_app_minutes": 90, "continuous_minutes": 120},
     "quiet_hours": ["23:00", "07:00"],       # she stays silent (except for urgent health alerts)
     "notify_shortcut": "",                   # a name from tools.shortcuts: how she reaches your phone/watch for alerts
+    "emergency_number": "997",               # what her dialer offer opens (digits only); 997 = ambulance in Saudi Arabia
+    "loud_alerts": True,                     # urgent health alerts turn this PC's volume up first
 }
+YES = re.compile(r"^\W*(yes|yeah|yep|yup|please|do it|go ahead|call|open( it| the dialer)?|ok(ay)?)\b", re.I)
+NO = re.compile(r"^\W*(no|nope|nah|cancel|stop|don'?t|i'?m (fine|ok|okay))\b", re.I)
 
 
 def settings(cfg):
@@ -49,7 +54,7 @@ class Companion:
         b = self.c["breaks"]
         self.usage = wellbeing.Usage(b["same_app_minutes"], b["continuous_minutes"], clock=clock)
         self.phone_usage = wellbeing.Usage(b["same_app_minutes"], b["continuous_minutes"], clock=clock)
-        self.phone_open = None
+        self.phone_open, self.offer, self.loud_at = None, None, -1e9
         self.health_log = Path(d) / "health.jsonl"
         self.missed, self.burst, self.last_spoken = [], [], 0.0
         self.server, self.stop_ev = None, threading.Event()
@@ -61,6 +66,9 @@ class Companion:
         if quiet and not urgent:
             self.missed.append(text)
             return False
+        if urgent:
+            self._louder()
+            self.offer = self.clock()
         self._say(text, urgent)
         if urgent or "break" in text.lower():
             self.notify_phone()
@@ -68,6 +76,33 @@ class Companion:
 
     def alert(self, text, urgent=False):
         self.speak(text, urgent=urgent)
+
+    def _louder(self):
+        """Urgent health alerts must be heard: turn the PC's volume up (at most once every five minutes)."""
+        if not self.c.get("loud_alerts", True) or self.clock() - self.loud_at < 300:
+            return
+        self.loud_at = self.clock()
+        try:
+            if self.platform.can_change_volume():
+                self.platform.volume_taps("up", 25)                 # about +50%
+        except Exception:
+            pass
+
+    def dial(self):
+        """Open the phone's dialer with the emergency number typed in (never places the call: you press call).
+        Needs the phone connected over adb; otherwise she says so plainly."""
+        num = str(self.c.get("emergency_number") or "997")
+        if not re.fullmatch(r"\+?\d{2,15}", num):
+            num = "997"
+        try:
+            code, out = self.platform.adb(["shell", "am", "start", "-a", "android.intent.action.DIAL", "-d", f"tel:{num}"],
+                                          self.tools.get("adb_path") or "adb")
+            ok = code == 0 and "error" not in out.lower()
+        except Exception:
+            ok = False
+        if ok:
+            return f"I've opened the dialer on your phone with {num} ready. Press the green call button now."
+        return f"I couldn't reach your phone from here. Please dial {num} yourself right now."
 
     def notify_phone(self):
         name = str(self.c.get("notify_shortcut") or "").lower()
@@ -135,8 +170,17 @@ class Companion:
     def answer(self, text):
         """Emergency words, or a reply to a health check-in. Returns what to say, or None."""
         if health.EMERGENCY.search(text):
+            self._louder()
             self.notify_phone()
+            self.offer = self.clock()
             return health.EMERGENCY_REPLY
+        if self.offer is not None and self.clock() - self.offer < 900:
+            if YES.match(text):
+                self.offer = None
+                return self.dial()
+            if NO.match(text):
+                self.offer = None
+                return "Okay. If it gets worse, or you're unsure, call the emergency number straight away."
         return self.monitor.reply(text)
 
     # ---------------------------------------------------------------- the heartbeat
