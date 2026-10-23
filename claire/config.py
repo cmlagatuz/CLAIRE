@@ -37,6 +37,8 @@ DEFAULTS = {
         "notify_shortcut": "",
         "emergency_number": "997",
         "loud_alerts": True,
+        "auto_call_seconds": 45,
+        "emergency_shortcut": "",
     },
     "knowledge": {"folders": None, "extensions": None},      # Phase 5: None = the folders in tools.folders, all file types
     "voice": {

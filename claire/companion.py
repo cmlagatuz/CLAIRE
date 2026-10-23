@@ -18,9 +18,11 @@ DEFAULTS = {
     "notify_shortcut": "",                   # a name from tools.shortcuts: how she reaches your phone/watch for alerts
     "emergency_number": "997",               # what her dialer offer opens (digits only); 997 = ambulance in Saudi Arabia
     "loud_alerts": True,                     # urgent health alerts turn this PC's volume up first
+    "auto_call_seconds": 45,                 # urgent alert + no answer from you → she places the call herself (0 = never)
+    "emergency_shortcut": "",                # optional: a name from tools.shortcuts that makes your phone place the call
 }
 YES = re.compile(r"^\W*(yes|yeah|yep|yup|please|do it|go ahead|call|open( it| the dialer)?|ok(ay)?)\b", re.I)
-NO = re.compile(r"^\W*(no|nope|nah|cancel|stop|don'?t|i'?m (fine|ok|okay))\b", re.I)
+NO = re.compile(r"^\W*(no|nope|nah|cancel|stop|don'?t|false alarm|i'?m (fine|ok|okay))\b", re.I)
 
 
 def settings(cfg):
@@ -55,6 +57,7 @@ class Companion:
         self.usage = wellbeing.Usage(b["same_app_minutes"], b["continuous_minutes"], clock=clock)
         self.phone_usage = wellbeing.Usage(b["same_app_minutes"], b["continuous_minutes"], clock=clock)
         self.phone_open, self.offer, self.loud_at = None, None, -1e9
+        self.auto_due, self.last_call = None, -1e9
         self.health_log = Path(d) / "health.jsonl"
         self.missed, self.burst, self.last_spoken = [], [], 0.0
         self.server, self.stop_ev = None, threading.Event()
@@ -68,7 +71,9 @@ class Companion:
             return False
         if urgent:
             self._louder()
-            self.offer = self.clock()
+            self._arm()
+            if not self._auto_secs():
+                text = text.replace(health.SILENT_PART, "")
         self._say(text, urgent)
         if urgent or "break" in text.lower():
             self.notify_phone()
@@ -88,21 +93,52 @@ class Companion:
         except Exception:
             pass
 
-    def dial(self):
-        """Open the phone's dialer with the emergency number typed in (never places the call: you press call).
-        Needs the phone connected over adb; otherwise she says so plainly."""
-        num = str(self.c.get("emergency_number") or "997")
-        if not re.fullmatch(r"\+?\d{2,15}", num):
-            num = "997"
+    def _auto_secs(self):
         try:
-            code, out = self.platform.adb(["shell", "am", "start", "-a", "android.intent.action.DIAL", "-d", f"tel:{num}"],
+            return max(0, int(self.c.get("auto_call_seconds", 45)))
+        except (TypeError, ValueError):
+            return 45
+
+    def _arm(self):
+        """An emergency is on: wait for his yes/stop; with no answer she places the call herself (unless switched off)."""
+        now = self.clock()
+        self.offer = now
+        if self._auto_secs() and self.auto_due is None and now - self.last_call > 600:
+            self.auto_due = now + self._auto_secs()
+
+    def _number(self):
+        num = str(self.c.get("emergency_number") or "997")
+        return num if re.fullmatch(r"\+?\d{2,15}", num) else "997"
+
+    def _try_adb(self, action):
+        try:
+            code, out = self.platform.adb(["shell", "am", "start", "-a", action, "-d", f"tel:{self._number()}"],
                                           self.tools.get("adb_path") or "adb")
-            ok = code == 0 and "error" not in out.lower()
+            return code == 0 and "error" not in out.lower()
         except Exception:
-            ok = False
-        if ok:
-            return f"I've opened the dialer on your phone with {num} ready. Press the green call button now."
-        return f"I couldn't reach your phone from here. Please dial {num} yourself right now."
+            return False
+
+    def place_call(self):
+        """Call the emergency number NOW. Tries, in order: the phone's call action over adb, your own phone shortcut,
+        the dialer pre-filled. Says plainly which one worked."""
+        self.offer, self.auto_due, self.last_call = None, None, self.clock()
+        num = self._number()
+        if self._try_adb("android.intent.action.CALL"):
+            return f"Calling {num} now. Stay on the line and tell them where you are."
+        name = str(self.c.get("emergency_shortcut") or "").lower()
+        sc = {k.lower(): v for k, v in (self.tools.get("shortcuts") or {}).items()}
+        if name and name in sc:
+            try:
+                self.platform.http_get(sc[name])
+                return f"I've told your phone to call {num}. Stay on the line."
+            except Exception:
+                pass
+        if self._try_adb("android.intent.action.DIAL"):
+            return f"The call itself was blocked, but {num} is typed in on your phone. Press call now."
+        return f"I can't reach your phone. Dial {num} now, or shout for someone near you."
+
+    def dial(self):
+        return self.place_call()
 
     def notify_phone(self):
         name = str(self.c.get("notify_shortcut") or "").lower()
@@ -172,19 +208,21 @@ class Companion:
         if health.EMERGENCY.search(text):
             self._louder()
             self.notify_phone()
-            self.offer = self.clock()
-            return health.EMERGENCY_REPLY
+            self._arm()
+            return health.EMERGENCY_REPLY if self._auto_secs() else health.EMERGENCY_REPLY.replace(health.SILENT_PART, "")
         if self.offer is not None and self.clock() - self.offer < 900:
             if YES.match(text):
-                self.offer = None
-                return self.dial()
+                return self.place_call()
             if NO.match(text):
-                self.offer = None
-                return "Okay. If it gets worse, or you're unsure, call the emergency number straight away."
+                self.offer = self.auto_due = None
+                return "Okay, I won't call. If it gets worse or you're unsure, tell me and I will."
         return self.monitor.reply(text)
 
     # ---------------------------------------------------------------- the heartbeat
     def tick(self):
+        if self.auto_due is not None and self.clock() >= self.auto_due:
+            self._louder()
+            self._say(self.place_call(), True)
         for r in self.reminders.due():
             self.speak(f"Reminder: {r['text']}.", urgent=False)
         if self.c["breaks"]["enabled"]:
@@ -225,7 +263,7 @@ class Companion:
         threading.Thread(target=self._loop, daemon=True).start()
 
     def _loop(self):
-        while not self.stop_ev.wait(30):
+        while not self.stop_ev.wait(5 if self.auto_due is not None else 30):
             try:
                 self.tick()
             except Exception:

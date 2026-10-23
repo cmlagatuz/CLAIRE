@@ -40,7 +40,9 @@ HANDS_RULE = ("\n- You have hands: tools to check the PC, find files, open files
               "After calling a tool that is waiting for his yes, say one short sentence and stop. "
               "About health: you are NOT a doctor. Never say or imply he is fine or that a reading is safe; never diagnose. If he "
               "mentions symptoms (chest pain, trouble breathing, numbness…) tell him to call emergency services now. "
-              "Never claim an action happened unless a tool result says it did.")
+              "Never claim an action happened unless a tool result says it did. "
+              "You are his assistant, not a guide: when he asks for something, do it with a tool or say in ONE short sentence what "
+              "single thing is missing; never lecture him on doing it himself.")
 
 # Only messages that sound like a PC action get the tools (and their long instructions). Everything else is a plain,
 # fast chat — offering 13 tools to a 7B model makes every single answer slower.

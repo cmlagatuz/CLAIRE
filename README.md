@@ -227,11 +227,14 @@ must be on the same Wi-Fi as the PC.
    `application/json`) to the same address, with a body like `{"type":"notification","app":"WhatsApp","title":"Ali"}`,
    `{"type":"call","who":"Mum","kind":"missed"}` or `{"type":"app_usage","app":"Instagram","state":"opened"}`.
 
-**Urgent alerts are loud.** Before an urgent health alert she turns the PC volume up, says it, and asks whether to open
-your phone's dialer with the emergency number ready (set `companion.emergency_number`, default `997`; switch the volume
-rise off with `companion.loud_alerts: false`). Say "yes" and she opens the dialer over ADB — **she never places the
-call herself, you press call**. If the phone isn't connected over ADB she says so and tells you to dial it yourself.
-The same offer follows you saying "chest pain", "I'm not okay" and the other emergency words.
+**Urgent alerts are loud — and she acts.** On an urgent health alert (or when you say "chest pain", "I'm not okay"…) she
+turns the PC volume up, says it, and asks: *yes* → she places the emergency call on your phone at once; *stop* → she
+cancels. **If you say nothing she makes the call herself after 45 seconds** (`companion.auto_call_seconds`, `0` = never
+without your yes), because someone who needs help may not be able to answer. She calls over ADB (`android.intent.action.CALL`
+to `companion.emergency_number`, default `997`); if that is blocked she tries your own phone shortcut
+(`companion.emergency_shortcut`, a name from `tools.shortcuts`), then opens the dialer with the number typed in. She calls
+once per emergency (not again for 10 minutes). Needs the phone connected over ADB — set that up and check it while you are
+well, not during an emergency. False alarms happen (a hard workout can look like trouble): say "stop" and she cancels.
 
 Honest limits: heart rate reaches her only as fast as Samsung Health syncs the watch to the phone and the app sends it
 (minutes, not seconds), so this is a watchful companion, **not** a medical alarm. If you feel unwell, call your local

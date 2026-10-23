@@ -14,10 +14,10 @@ EMERGENCY = re.compile(
     r"(?:can'?t|cannot|can not|struggling to|hard to) breathe|short(?:ness)? of breath|crushing (?:pain|feeling)|"
     r"i(?:'m| am) (?:going to |about to )?(?:faint|pass(?:ing)? out|collaps\w+)|(?:face|arm) (?:is )?(?:drooping|numb)|"
     r"slurred speech|call (?:an )?ambulance|i(?:'m| am) not (?:ok|okay|alright))\b", re.I)
-EMERGENCY_REPLY = (f"This could be serious. Please call your local emergency number now — {EMERGENCY_NUMBER}. "
-                   "Don't wait for me. Sit down, unlock your door, and if anyone is near, tell them. "
-                   "I'm not a doctor and I can't judge this from here. "
-                   "Say yes and I'll try to open the dialer on your phone with the number ready, so you only press call.")
+SILENT_PART = " If you say nothing, I'll make the call myself in under a minute."
+EMERGENCY_REPLY = (f"This could be serious. Calling your local emergency number is what you need now — {EMERGENCY_NUMBER}. "
+                   "Say yes and I'll call it for you right now, or say stop to cancel." + SILENT_PART +
+                   " Sit down, unlock your door, and tell anyone near you. I'm not a doctor and I can't judge this from here.")
 FINE = re.compile(r"^\W*(i(?:'m| am)? (?:fine|ok|okay|alright|good)|(?:all )?(?:fine|ok|okay)|false alarm|"
                   r"just (?:exercising|working out|walking|running)|i(?:'m| am) exercising)\b", re.I)
 

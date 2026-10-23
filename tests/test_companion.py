@@ -72,7 +72,7 @@ class Emergency(unittest.TestCase):
         r = health.EMERGENCY_REPLY.lower()
         self.assertIn("emergency number", r)
         self.assertIn("997", r)
-        self.assertIn("don't wait for me", r)
+        self.assertIn("say yes", r)
         for bad in ("you're fine", "you are fine", "nothing to worry", "probably nothing", "it's just"):
             self.assertNotIn(bad, r)
 
@@ -397,43 +397,76 @@ class Phone(unittest.TestCase):
 
 
 class Dialer(unittest.TestCase):
-    def test_urgent_alert_is_loud_and_offers_the_dialer_and_yes_opens_it_without_calling(self):
+    CALL = ["shell", "am", "start", "-a", "android.intent.action.CALL", "-d", "tel:997"]
+
+    def test_urgent_alert_is_loud_and_yes_places_the_call(self):
         comp, clock, said, now, pc, cfg = make()
-        pc.adb_out = {"shell am start": (0, "Starting: Intent { act=android.intent.action.DIAL dat=tel:997 }")}
-        pc.adb_log = []
+        pc.adb_out, pc.adb_log = {"shell am start": (0, "Starting: Intent { act=android.intent.action.CALL dat=tel:997 }")}, []
         comp.handle_event({"type": "heart_rate", "bpm": 175.0})
         self.assertIn(("volume", "up", 25), pc.did)
         self.assertIn("Say yes", said[0][0])
-        reply = comp.answer("yes")
-        self.assertIn("997", reply)
-        self.assertEqual(pc.adb_log[-1], ["shell", "am", "start", "-a", "android.intent.action.DIAL", "-d", "tel:997"])
-        self.assertNotIn("CALL", " ".join(pc.adb_log[-1]).replace("DIAL", ""))      # never places the call itself
+        self.assertIn("Calling 997", comp.answer("yes"))
+        self.assertEqual(pc.adb_log[-1], self.CALL)
         self.assertIsNone(comp.answer("yes"))                                      # the offer is used up
 
-    def test_without_the_phone_connected_she_tells_you_to_dial_yourself(self):
+    def test_silence_means_she_calls_herself_after_the_countdown_and_only_once(self):
         comp, clock, said, now, pc, cfg = make()
-        pc.adb_out = None
-        comp.answer("I have chest pain")
-        self.assertIn("dial 997 yourself", comp.answer("yes please"))
+        pc.adb_out, pc.adb_log = {}, []
+        comp.handle_event({"type": "heart_rate", "bpm": 175.0})
+        clock.adv(30)
+        comp.tick()
+        self.assertEqual([a for a in pc.adb_log if "CALL" in " ".join(a)], [])      # still counting down
+        clock.adv(20)
+        comp.tick()
+        self.assertEqual(pc.adb_log[-1], self.CALL)
+        self.assertIn("Calling 997", said[-1][0])
+        n = len(pc.adb_log)
+        clock.adv(400)
+        comp.handle_event({"type": "heart_rate", "bpm": 176.0})                    # repeat alert must not call twice
+        clock.adv(100)
+        comp.tick()
+        self.assertEqual(len(pc.adb_log), n)
 
-    def test_no_or_a_stale_offer_does_nothing_and_a_yes_to_other_talk_is_ignored(self):
+    def test_stop_or_im_fine_cancels_the_countdown(self):
         comp, clock, said, now, pc, cfg = make()
-        pc.adb_log = []
-        self.assertIsNone(comp.answer("yes"))                                      # no offer yet
+        pc.adb_out, pc.adb_log = {}, []
         comp.answer("I have chest pain")
-        self.assertIn("emergency number", comp.answer("no"))
+        self.assertIn("won't call", comp.answer("stop"))
+        clock.adv(300)
+        comp.tick()
+        self.assertEqual(pc.adb_log, [])
+
+    def test_fallbacks_shortcut_then_dialer_then_plain_instruction(self):
+        comp, clock, said, now, pc, cfg = make(emergency_shortcut="SOS")
+        comp.tools["shortcuts"] = {"sos": "http://192.168.1.50:8080/sos"}
+        pc.adb_out, pc.adb_log, pc.shortcuts_hit = {"shell am start -a android.intent.action.CALL": (1, "Error")}, [], []
+        self.assertIn("told your phone to call 997", comp.place_call())
+        self.assertEqual(pc.shortcuts_hit, ["http://192.168.1.50:8080/sos"])
+        comp.tools["shortcuts"] = {}
+        self.assertIn("press call", comp.place_call().lower())
+        pc.adb_out = None
+        self.assertIn("I can't reach your phone. Dial 997 now", comp.place_call())
+
+    def test_switches_and_number_check(self):
+        comp, clock, said, now, pc, cfg = make(loud_alerts=False, auto_call_seconds=0, emergency_number="9;rm -rf")
+        pc.adb_out, pc.adb_log = {}, []
+        comp.handle_event({"type": "heart_rate", "bpm": 175.0})
+        self.assertNotIn(("volume", "up", 25), pc.did)
+        self.assertNotIn("make the call myself", said[0][0])
+        clock.adv(600)
+        comp.tick()
+        self.assertEqual(pc.adb_log, [])                                           # auto-call off → never calls unasked
+        comp.answer("yes")
+        self.assertEqual(pc.adb_log[-1][-1], "tel:997")
+
+    def test_a_stale_offer_or_a_yes_with_no_emergency_does_nothing(self):
+        comp, clock, said, now, pc, cfg = make(auto_call_seconds=0)
+        pc.adb_log = []
+        self.assertIsNone(comp.answer("yes"))
         comp.answer("I have chest pain")
         clock.adv(1000)
         self.assertIsNone(comp.answer("yes"))
         self.assertEqual(pc.adb_log, [])
-
-    def test_loud_alerts_can_be_switched_off_and_the_number_is_checked(self):
-        comp, clock, said, now, pc, cfg = make(loud_alerts=False, emergency_number="9;rm -rf")
-        pc.adb_out, pc.adb_log = {}, []
-        comp.handle_event({"type": "heart_rate", "bpm": 175.0})
-        self.assertNotIn(("volume", "up", 25), pc.did)
-        comp.answer("yes")
-        self.assertEqual(pc.adb_log[-1][-1], "tel:997")
 
 
 class Breaks(unittest.TestCase):
