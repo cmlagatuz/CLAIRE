@@ -265,6 +265,23 @@ class Server(unittest.TestCase):
         self.assertEqual(self.call(body={"type": "heart_rate", "bpm": 71}), (200, {"ok": True}))
         self.assertEqual(self.events, [{"type": "heart_rate", "bpm": 71.0}])
 
+    def test_health_connect_batches_keep_their_own_times_and_drop_stale_ones(self):
+        now = self.clock()
+
+        def iso(ago):
+            return datetime.utcfromtimestamp(now - ago).strftime("%Y-%m-%dT%H:%M:%SZ")
+        body = {"timestamp": iso(0), "app_version": "1", "heart_rate": [
+            {"bpm": 80, "time": iso(600)}, {"bpm": 150, "time": iso(7 * 3600)}, {"bpm": 90, "time": iso(60)}, {"bpm": 90, "time": "junk"}],
+            "oxygen_saturation": [{"percentage": 97.0, "time": iso(30)}]}
+        self.assertEqual(self.call(body=body)[0], 200)
+        got = [(e["type"], e.get("bpm", e.get("percent")), round(now - e["at"])) for e in self.events]
+        self.assertEqual(got, [("heart_rate", 80.0, 600), ("heart_rate", 90.0, 60), ("spo2", 97.0, 30)])
+
+    def test_batch_with_an_impossible_value_is_refused_whole(self):
+        iso = datetime.utcfromtimestamp(self.clock() - 5).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual(self.call(body={"heart_rate": [{"bpm": 999, "time": iso}]})[0], 400)
+        self.assertEqual(self.events, [])
+
     def test_token_in_path_header_or_query(self):
         self.assertEqual(self.call(path="/x", headers={"X-Claire-Link": TOKEN}, body={"type": "ping"})[0], 200)
         self.assertEqual(self.call(path=f"/anything?k={TOKEN}", body={"type": "ping"})[0], 200)
@@ -286,7 +303,7 @@ class Server(unittest.TestCase):
         self.assertEqual(self.call(body=b"not json")[0], 400)
         self.assertEqual(self.call(body={"type": "reboot"})[0], 400)
         self.assertEqual(self.call(body={"type": "heart_rate", "bpm": 1})[0], 400)
-        self.assertEqual(self.call(body=b"x" * 5000)[0], 413)
+        self.assertEqual(self.call(body=b"x" * 70000)[0], 413)
         self.assertEqual(self.call(body=b"")[0], 400)
         self.assertEqual(self.events, [])
 

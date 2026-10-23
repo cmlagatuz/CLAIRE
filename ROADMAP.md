@@ -56,7 +56,7 @@ Rules for every phase: **local first** · **ask before acting** · **tests must 
 | 4.8.2 | Health alerts from watch readings (conservative; never reassures) + local emergency-words reply | ✅ |
 | 4.8.3 | Reminders (birthdays repeat yearly), notes, messages/calls announced, quiet hours | ✅ |
 | 4.8.4 | Break reminders: same app 90 min / 2 h on screens, PC foreground app + phone app events | ✅ |
-| 4.8.5 | Verified automatic heart-rate feed from the Galaxy Watch5 Pro on Carl's Redmagic | ⬜ needs testing on his devices |
+| 4.8.5 | Automatic heart-rate feed from the Galaxy Watch5 Pro on Carl's Redmagic (Health Connect Webhook → link; receiver done and tested) | 🟡 needs testing on his devices |
 | 4.8.6 | Samsung ECG/BP (needs a Samsung phone) | ⬜ not possible on the Redmagic |
 
 ## Phase 5 · Knowledge — your documents, with sources  ✅ v2.7.0

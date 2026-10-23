@@ -5,12 +5,14 @@ import hmac
 import json
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from .hands.net import is_private
 
-MAX_BODY = 4096
+MAX_BODY = 65536                                # one Health Connect batch can hold a few hours of readings
+MAX_AGE = 6 * 3600                              # readings older than this are ignored
 KINDS = {"ping", "heart_rate", "spo2", "steps", "notification", "call", "app_usage"}
 
 
@@ -44,6 +46,8 @@ def validate(ev):
     if kind not in KINDS:
         raise ValueError("unknown type; use one of: " + ", ".join(sorted(KINDS)))
     out = {"type": kind}
+    if kind in ("heart_rate", "spo2", "steps") and ev.get("at") is not None:
+        out["at"] = _num(ev["at"], 0, 4102444800, "at")
     if kind == "heart_rate":
         out["bpm"] = _num(ev.get("bpm"), 20, 250, "bpm")
     elif kind == "spo2":
@@ -61,6 +65,36 @@ def validate(ev):
         out.update(app=_text(ev.get("app"), 40, "app", True), state=ev.get("state", "opened"))
         if out["state"] not in ("opened", "closed"):
             raise ValueError("state must be opened or closed")
+    return out
+
+
+def _when(v):
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).astimezone(timezone.utc).timestamp()
+    except (ValueError, TypeError, OSError):
+        return None
+
+
+def expand(body, now):
+    """Understands the "Health Connect Webhook" app's batches: {"heart_rate": [{"bpm", "time"}], "oxygen_saturation":
+    [{"percentage", "time"}], "steps": [{"count", "time"}]} → separate clean events, each with its real time.
+    Anything else is returned unchanged. Old or future-dated readings are dropped."""
+    if not isinstance(body, dict) or "type" in body or not any(
+            isinstance(body.get(k), list) for k in ("heart_rate", "oxygen_saturation", "steps")):
+        return [body]
+    out = []
+    for key, kind, field, name in (("heart_rate", "heart_rate", "bpm", "bpm"), ("oxygen_saturation", "spo2", "percentage", "percent"),
+                                   ("steps", "steps", "count", "count")):
+        rows = []
+        for r in (body.get(key) or [])[:500]:
+            if not isinstance(r, dict):
+                continue
+            t = _when(r.get("time"))
+            if t is None or now - t > MAX_AGE or t - now > 120:
+                continue
+            rows.append((t, r.get(field)))
+        for t, v in sorted(rows)[-200:]:
+            out.append({"type": kind, name: v, "at": t})
     return out
 
 
@@ -163,11 +197,13 @@ class Handler(BaseHTTPRequestHandler):
         if n <= 0 or n > MAX_BODY:
             return self._reply(413 if n > MAX_BODY else 400, {"error": f"send 1 to {MAX_BODY} bytes of JSON"})
         try:
-            ev = validate(json.loads(self.rfile.read(n).decode("utf-8")))
+            body = json.loads(self.rfile.read(n).decode("utf-8"))
+            events = [validate(e) for e in expand(body, self.server.clock())]
         except (ValueError, UnicodeDecodeError) as e:
             return self._reply(400, {"error": str(e)})
         try:
-            self.server.on_event(ev)
+            for ev in events:
+                self.server.on_event(ev)
         except Exception:
             return self._reply(500, {"error": "I couldn't process that"})
         self._reply(200, {"ok": True})

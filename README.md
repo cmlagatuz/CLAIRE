@@ -214,6 +214,23 @@ Settings (`settings.json`):
 `notify_shortcut` is optional: the name of one of your `tools.shortcuts` (e.g. a Tasker action that makes your phone or watch buzz). She
 runs it for urgent health alerts and break reminders, so you get them away from the PC.
 
+### Feeding the link from an Android phone (Galaxy Watch → Samsung Health → Health Connect)
+
+Two small apps, each doing one job. Use the address from `link.bat` (`http://<PC address>:8766/e/<token>`); both apps
+must be on the same Wi-Fi as the PC.
+
+1. **Heart rate, oxygen, steps — “Health Connect Webhook”** (open source). Samsung Health must be allowed to write to
+   Health Connect, and this app allowed to read heart rate, oxygen saturation and steps. In the app add a webhook with the
+   address above and set the sync interval. She understands its batches directly and keeps each reading's real time, so
+   old readings never raise a false alarm. Readings older than 6 hours are ignored.
+2. **Messages, calls, app opened/closed — MacroDroid** (or Tasker). Create macros whose action is *HTTP Request* (POST,
+   `application/json`) to the same address, with a body like `{"type":"notification","app":"WhatsApp","title":"Ali"}`,
+   `{"type":"call","who":"Mum","kind":"missed"}` or `{"type":"app_usage","app":"Instagram","state":"opened"}`.
+
+Honest limits: heart rate reaches her only as fast as Samsung Health syncs the watch to the phone and the app sends it
+(minutes, not seconds), so this is a watchful companion, **not** a medical alarm. If you feel unwell, call your local
+emergency number (997 in Saudi Arabia) — do not wait for her.
+
 ## Your documents, with sources (new in v2.7 — Phase 5)
 She keeps a private index of the documents in the folders you allow (Documents, Downloads, Desktop by default). Ask about what is
 in them and she answers **from the passages she finds, with the file and the place** — so you can check every answer.

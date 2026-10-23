@@ -88,10 +88,10 @@ class Companion:
         except (OSError, ValueError, KeyError):
             pass
 
-    def _store_health(self, kind, value):
+    def _store_health(self, kind, value, at=None):
         try:
             with open(self.health_log, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"t": self.clock(), "k": kind, "v": value}) + "\n")
+                f.write(json.dumps({"t": self.clock() if at is None else at, "k": kind, "v": value}) + "\n")
         except OSError:
             pass
 
@@ -101,8 +101,8 @@ class Companion:
         if k in ("heart_rate", "spo2", "steps"):
             kind, val = {"heart_rate": ("hr", ev.get("bpm")), "spo2": ("spo2", ev.get("percent")),
                          "steps": ("steps", ev.get("count"))}[k]
-            self.vitals.add(kind, val)
-            self._store_health(kind, val)
+            self.vitals.add(kind, val, ev.get("at"))
+            self._store_health(kind, val, ev.get("at"))
             self.monitor.check()
         elif k == "notification":
             who = ev["title"] or "Someone"
