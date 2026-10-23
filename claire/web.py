@@ -118,11 +118,14 @@ class WebSession:
                             self.hub.publish("note", text="From our last chat I learned: " + "; ".join(facts))
         except Exception as e:
             self.hub.publish("error", text=f"Start-up problem: {e}")
-            self.start_ram_watch()
-            if self.companion:
-                self.companion.start()
         finally:
             signals.activity = "idle"
+            try:
+                self.start_ram_watch()
+                if self.companion:
+                    self.companion.start()                    # also starts the phone link, whatever happened above
+            except Exception as e:
+                self.hub.publish("error", text=f"Start-up problem: {e}")
 
     def start_ram_watch(self):
         """Task-Manager-style eye on memory: warns once when it runs high and offers to close the biggest program."""
